@@ -226,6 +226,61 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
   const matchedCat = catMatch.col;
   const matchedDate = dateMatch.col;
 
+  // Anomaly Detection Query Handler ("Find anomalies in the dataset", "Detect unusual records", "Which records are anomalous?")
+  const isAnomalyQuery = ['anomaly', 'anomalies', 'anomalous', 'unusual', 'outlier', 'outliers', 'abnormal', 'peculiar', 'strange', 'isolation forest'].some(k => q.includes(k)) ||
+    (prevPlan?.operation === 'anomaly_detection' && (matchedNumeric || q.includes('what about')) && !matchedCat);
+
+  if (isAnomalyQuery) {
+    // 1. Identifier protection check (e.g. Order_ID used as anomaly feature)
+    if (matchedId && (q.includes('using') || q.includes('feature') || q.includes('with') || q.includes('and'))) {
+      const validMeasure = (matchedNumeric ? matchedNumeric.name : (numericCols[0] ? numericCols[0].name : 'Sales'));
+      return {
+        status: 'cannot_answer',
+        reason: `${matchedId.name} is an identifier and cannot be used as an anomaly-detection feature. ${validMeasure} can be used as a numerical measure.`
+      };
+    }
+
+    const matchedNumerics = numericCols.filter(c => findColumnInQuery([c], question));
+
+    if (matchedNumerics.length >= 2) {
+      return {
+        status: 'success',
+        plan: {
+          operation: 'anomaly_detection',
+          method: 'isolation_forest',
+          features: matchedNumerics.map(c => c.name),
+          contamination: 'auto',
+          random_state: 42
+        }
+      };
+    }
+
+    if (matchedNumerics.length === 1) {
+      return {
+        status: 'cannot_answer',
+        reason: 'For multivariate anomaly detection, at least two eligible numerical measures are required.'
+      };
+    }
+
+    if (numericCols.length >= 2) {
+      return {
+        status: 'success',
+        plan: {
+          operation: 'anomaly_detection',
+          method: 'isolation_forest',
+          features: numericCols.map(c => c.name),
+          contamination: 'auto',
+          random_state: 42
+        }
+      };
+    }
+
+    return {
+      status: 'cannot_answer',
+      reason: 'Anomaly detection cannot be performed because the dataset contains fewer than two eligible numerical measures.'
+    };
+  }
+
   // Handle explicit queries on identifier columns (e.g. Order_ID)
   if (matchedId) {
     const isCountQuery = q.includes('how many') || q.includes('count') || q.includes('unique') || q.includes('number of');

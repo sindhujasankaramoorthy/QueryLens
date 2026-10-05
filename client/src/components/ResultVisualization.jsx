@@ -51,6 +51,7 @@ export default function ResultVisualization({ execution, validation, question, t
 
   const isCorrelation = operation === 'correlation' || firstRow.correlation !== undefined || firstRow.pearsonR !== undefined;
   const isCorrelationMatrix = operation === 'correlation_matrix';
+  const isAnomalyDetection = operation === 'anomaly_detection';
 
   const colX = metadata.columnX || firstRow.columnX;
   const colY = metadata.columnY || firstRow.columnY;
@@ -385,6 +386,199 @@ export default function ResultVisualization({ execution, validation, question, t
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 3. Multivariate Anomaly Detection View (Phase 11) */}
+      {isAnomalyDetection && (
+        <div>
+          {/* Anomaly Summary Banner */}
+          <div
+            style={{
+              background: isDark ? 'linear-gradient(135deg, rgba(244, 63, 94, 0.12), rgba(245, 158, 11, 0.08))' : 'linear-gradient(135deg, rgba(244, 63, 94, 0.08), rgba(245, 158, 11, 0.05))',
+              border: '1px solid rgba(244, 63, 94, 0.3)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1.5rem',
+              marginBottom: '1.25rem'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <AlertTriangle size={22} style={{ color: 'var(--accent-rose)' }} />
+                <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-rose)' }}>
+                  Multivariate Anomaly Detection (Isolation Forest)
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: 'rgba(244, 63, 94, 0.15)', color: 'var(--accent-rose)', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
+                  Anomalies: {metadata.anomaliesDetected || 0}
+                </span>
+                <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                  Normal: {metadata.normalRecords || 0}
+                </span>
+              </div>
+            </div>
+
+            {/* Explanatory Distinction Banner */}
+            <div style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', background: 'rgba(0, 0, 0, 0.2)', border: '1px dashed rgba(255, 255, 255, 0.15)', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+              <strong style={{ color: 'var(--accent-amber)' }}>Phase 7 vs Phase 11 Distinction:</strong> Phase 7 detects individual statistical outliers (IQR). Phase 11 detects <strong>multivariate anomalies</strong> — records with unusual combinations across multiple numerical measures using Isolation Forest (random state 42).
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Total Records</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.totalRecords || resultData.length}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Rows Analyzed</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.rowsAnalyzed || resultData.length}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Rows Excluded</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.rowsExcluded || 0}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Anomaly Rate</div>
+                <strong style={{ color: 'var(--accent-rose)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.anomalyRate || 0}%</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Random State</div>
+                <strong style={{ color: 'var(--primary)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.randomState || 42}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Anomaly Scatter Plot */}
+          {metadata.scatterPoints && metadata.scatterPoints.length > 0 && (
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <ScatterIcon size={20} style={{ color: 'var(--accent-rose)' }} />
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                    Multivariate Anomaly Scatter Plot ({metadata.featureX} vs {metadata.featureY})
+                  </h4>
+                </div>
+                <span className="type-tag">Isolation Forest ({metadata.scatterPoints.length} points)</span>
+              </div>
+
+              <div style={{ width: '100%', height: 340, marginTop: '0.5rem' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 20, right: 30, left: 10, bottom: 25 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                    <XAxis
+                      dataKey="x"
+                      name={metadata.featureX}
+                      type="number"
+                      stroke={axisColor}
+                      tick={{ fill: axisColor, fontSize: 12 }}
+                      tickLine={{ stroke: axisColor }}
+                      label={{ value: formatLabel(metadata.featureX), position: 'insideBottom', offset: -15, fill: axisColor, fontSize: 12 }}
+                    />
+                    <YAxis
+                      dataKey="y"
+                      name={metadata.featureY}
+                      type="number"
+                      stroke={axisColor}
+                      tick={{ fill: axisColor, fontSize: 12 }}
+                      tickLine={{ stroke: axisColor }}
+                      label={{ value: formatLabel(metadata.featureY), angle: -90, position: 'insideLeft', fill: axisColor, fontSize: 12 }}
+                    />
+                    <Tooltip
+                      cursor={{ strokeDasharray: '3 3' }}
+                      contentStyle={{ background: tooltipBg, borderColor: tooltipBorder, borderRadius: '8px', color: tooltipTextColor }}
+                      formatter={(val, name) => [
+                        formatValue(val),
+                        name === 'x' ? formatLabel(metadata.featureX) : formatLabel(metadata.featureY)
+                      ]}
+                    />
+                    <Scatter
+                      name="Normal Observations"
+                      data={metadata.scatterPoints.filter(p => p.status === 'Normal')}
+                      fill="var(--primary)"
+                      opacity={0.75}
+                    />
+                    <Scatter
+                      name="Multivariate Anomalies"
+                      data={metadata.scatterPoints.filter(p => p.status === 'Anomaly')}
+                      fill="#f43f5e"
+                      shape="diamond"
+                      size={80}
+                      opacity={0.95}
+                    />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Anomaly Results Table */}
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Layers size={18} style={{ color: 'var(--primary)' }} />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                  Anomaly Detection Results ({resultData.length} Records)
+                </h4>
+              </div>
+              <span className="type-tag">Sorted by Anomaly Score Descending</span>
+            </div>
+
+            <div className="table-wrapper">
+              <table className="profile-table">
+                <thead>
+                  <tr>
+                    {keys.map(key => (
+                      <th key={key} style={{ textAlign: typeof firstRow[key] === 'number' ? 'right' : 'left' }}>{formatLabel(key)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {resultData.map((row, idx) => {
+                    const isAnomaly = row['Anomaly Status'] === 'Anomaly';
+                    return (
+                      <tr key={idx} style={{ background: isAnomaly ? (isDark ? 'rgba(244, 63, 94, 0.08)' : 'rgba(244, 63, 94, 0.05)') : 'transparent' }}>
+                        {keys.map((key, cIdx) => {
+                          const rawVal = row[key];
+                          const isStatus = key === 'Anomaly Status';
+                          const isScore = key === 'Anomaly Score';
+
+                          if (isStatus) {
+                            return (
+                              <td key={cIdx}>
+                                <span style={{ padding: '0.2rem 0.55rem', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, background: isAnomaly ? 'rgba(244, 63, 94, 0.2)' : 'rgba(16, 185, 129, 0.15)', color: isAnomaly ? 'var(--accent-rose)' : 'var(--accent-emerald)' }}>
+                                  {rawVal}
+                                </span>
+                              </td>
+                            );
+                          }
+
+                          return (
+                            <td
+                              key={cIdx}
+                              style={{
+                                textAlign: typeof rawVal === 'number' ? 'right' : 'left',
+                                fontFamily: typeof rawVal === 'number' || isScore ? 'var(--font-mono)' : 'inherit',
+                                fontWeight: typeof rawVal === 'number' || isAnomaly ? 700 : 500,
+                                color: isScore && isAnomaly ? 'var(--accent-rose)' : cIdx === 0 ? 'var(--text-main)' : 'inherit'
+                              }}
+                            >
+                              {formatValue(rawVal)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1rem', fontSize: '0.78rem', color: 'var(--text-muted)', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
+              <span>Method: <strong style={{ color: 'var(--primary)' }}>Isolation Forest</strong></span>
+              <span>Random State: <strong style={{ color: 'var(--text-main)' }}>42</strong></span>
+              <span>Calculation: <strong style={{ color: 'var(--accent-emerald)' }}>100% Verifiable Deterministic</strong></span>
+            </div>
+          </div>
         </div>
       )}
 

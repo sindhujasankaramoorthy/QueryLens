@@ -34,6 +34,16 @@ function extractEvidenceNumbers(evidence) {
     numbers.add(Number(evidence.metadata.rawR).toFixed(2));
   }
 
+  if (evidence?.metadata?.anomaliesDetected !== undefined) numbers.add(String(evidence.metadata.anomaliesDetected));
+  if (evidence?.metadata?.normalRecords !== undefined) numbers.add(String(evidence.metadata.normalRecords));
+  if (evidence?.metadata?.anomalyRate !== undefined) {
+    numbers.add(String(evidence.metadata.anomalyRate));
+    numbers.add(Number(evidence.metadata.anomalyRate).toFixed(2));
+  }
+  if (evidence?.metadata?.totalRecords !== undefined) numbers.add(String(evidence.metadata.totalRecords));
+  if (evidence?.metadata?.rowsExcluded !== undefined) numbers.add(String(evidence.metadata.rowsExcluded));
+  if (evidence?.metadata?.randomState !== undefined) numbers.add(String(evidence.metadata.randomState));
+
   if (Array.isArray(evidence?.result)) {
     evidence.result.forEach(row => {
       Object.values(row).forEach(val => {
@@ -128,6 +138,33 @@ function generateDeterministicExplanation(evidence) {
 
   const firstRow = result[0];
   const keys = Object.keys(firstRow);
+
+  // 0. Anomaly Detection Result (Phase 11)
+  if (operation === 'anomaly_detection') {
+    const featureList = (metadata.features || []).join(', ');
+    const countAnomalies = metadata.anomaliesDetected !== undefined ? metadata.anomaliesDetected : 0;
+    const rate = metadata.anomalyRate !== undefined ? metadata.anomalyRate : 0;
+    const seed = metadata.randomState || 42;
+
+    let explanationText = `The Isolation Forest model (random state ${seed}) identified ${countAnomalies} multivariate anomalies (${rate}% anomaly rate) across ${rowsCount} analyzed records using features ${featureList}.`;
+
+    if (result.length > 0) {
+      const topAnomaly = result.find(r => r['Anomaly Status'] === 'Anomaly') || result[0];
+      const idCol = Object.keys(topAnomaly).find(k => k.toLowerCase().includes('id') || k.toLowerCase() === '#') || 'Order_ID';
+      const topId = topAnomaly[idCol];
+      const context = topAnomaly['Supporting Context'];
+
+      if (context) {
+        explanationText += ` Record ${topId} exhibits the most unusual pattern: ${context}. The model detects unusual feature combinations relative to the overall dataset; it does not establish causation.`;
+      } else {
+        explanationText += ` These records exhibit unusual combinations of numerical feature values compared with the overall dataset. Correlation/Isolation does not imply causation.`;
+      }
+    } else {
+      explanationText += ` No multivariate anomalies were detected at the selected threshold.`;
+    }
+
+    return explanationText;
+  }
 
   // 1. Correlation Matrix Result
   if (operation === 'correlation_matrix') {

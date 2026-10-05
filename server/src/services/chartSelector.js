@@ -134,6 +134,23 @@ function determineVisualization(executionResult, plan = null) {
     };
   }
 
+  if (operation === 'anomaly_detection') {
+    const meta = executionResult.metadata || {};
+    return {
+      chartType: 'anomaly_detection',
+      shouldRenderChart: true,
+      title: 'Multivariate Anomaly Detection (Isolation Forest)',
+      features: meta.features || [],
+      featureX: meta.featureX || 'X',
+      featureY: meta.featureY || 'Y',
+      scatterPoints: meta.scatterPoints || [],
+      anomaliesDetected: meta.anomaliesDetected || 0,
+      normalRecords: meta.normalRecords || 0,
+      anomalyRate: meta.anomalyRate || 0,
+      chartData: resultData
+    };
+  }
+
   if (['group_aggregate', 'top_n', 'bottom_n', 'sort'].includes(operation)) {
     return {
       chartType: 'bar',

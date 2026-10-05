@@ -20,7 +20,8 @@ const SUPPORTED_OPERATIONS = new Set([
   'time_series',
   'describe',
   'correlation',
-  'correlation_matrix'
+  'correlation_matrix',
+  'anomaly_detection'
 ]);
 
 const SUPPORTED_AGGREGATIONS = new Set([
@@ -464,6 +465,102 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
         reason: null
       };
     }
+  }
+
+  if (operation === 'anomaly_detection') {
+    let rawFeatures = plan.features || plan.columns || plan.measures;
+
+    // Eligible numerical measure columns from schema
+    const eligibleMeasureCols = (schemaColumns || [])
+      .filter(c => isNumericType(c.type) && getColSemanticType(c.name) !== 'identifier')
+      .map(c => c.name);
+
+    if (eligibleMeasureCols.length === 0) {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: 'Anomaly detection cannot be performed because the dataset contains no eligible numerical measures.'
+      };
+    }
+
+    let selectedFeatures = [];
+
+    if (Array.isArray(rawFeatures) && rawFeatures.length > 0) {
+      for (const f of rawFeatures) {
+        const type = getColType(f);
+        if (!type) {
+          return {
+            isValid: true,
+            status: 'cannot_answer',
+            plan: null,
+            reason: `Column '${f}' does not exist in the dataset schema.`
+          };
+        }
+
+        if (getColSemanticType(f) === 'identifier') {
+          const validMeasure = eligibleMeasureCols[0] || 'Sales';
+          return {
+            isValid: true,
+            status: 'cannot_answer',
+            plan: null,
+            reason: `${getCanonicalColName(f)} is an identifier and cannot be used as an anomaly-detection feature. ${validMeasure} can be used as a numerical measure.`
+          };
+        }
+
+        if (!isNumericType(type)) {
+          return {
+            isValid: true,
+            status: 'cannot_answer',
+            plan: null,
+            reason: `Anomaly detection requires numerical measure features. Column '${f}' is of non-numeric type '${type}'.`
+          };
+        }
+
+        selectedFeatures.push(getCanonicalColName(f));
+      }
+    } else if (plan.feature || plan.column || plan.measure) {
+      const singleF = plan.feature || plan.column || plan.measure;
+      if (getColSemanticType(singleF) === 'identifier') {
+        const validMeasure = eligibleMeasureCols[0] || 'Sales';
+        return {
+          isValid: true,
+          status: 'cannot_answer',
+          plan: null,
+          reason: `${getCanonicalColName(singleF)} is an identifier and cannot be used as an anomaly-detection feature. ${validMeasure} can be used as a numerical measure.`
+        };
+      }
+      selectedFeatures = [getCanonicalColName(singleF)];
+    } else {
+      selectedFeatures = eligibleMeasureCols;
+    }
+
+    selectedFeatures = Array.from(new Set(selectedFeatures));
+
+    if (selectedFeatures.length < 2) {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: 'For multivariate anomaly detection, at least two eligible numerical measures are required.'
+      };
+    }
+
+    return {
+      isValid: true,
+      status: 'validated',
+      plan: {
+        operation: 'anomaly_detection',
+        method: 'isolation_forest',
+        features: selectedFeatures,
+        columns: selectedFeatures,
+        contamination: plan.contamination || 'auto',
+        random_state: 42,
+        randomState: 42,
+        filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
+      },
+      reason: null
+    };
   }
 
   // 3. Limit validation

@@ -309,6 +309,159 @@ function computePairwiseCorrelation(rows, colX, colY) {
 }
 
 /**
+ * Deterministic Pseudo-Random Number Generator (PRNG) seeded with seed = 42
+ */
+function createSeededRandom(seed = 42) {
+  let s = seed % 2147483647;
+  if (s <= 0) s += 2147483646;
+  return function() {
+    s = (s * 16807) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+/**
+ * Average path length of unsuccessful search in BST
+ */
+function calculateC(n) {
+  if (n <= 1) return 0;
+  if (n === 2) return 1;
+  const eulerConstant = 0.5772156649;
+  return 2 * (Math.log(n - 1) + eulerConstant) - (2 * (n - 1) / n);
+}
+
+/**
+ * Recursive Isolation Tree Builder
+ */
+function buildITree(matrix, currentDepth, maxDepth, rng) {
+  const n = matrix.length;
+  if (currentDepth >= maxDepth || n <= 1) {
+    return { isLeaf: true, size: n };
+  }
+
+  const numFeatures = matrix[0].length;
+  let allIdentical = true;
+  for (let f = 0; f < numFeatures; f++) {
+    const val0 = matrix[0][f];
+    for (let i = 1; i < n; i++) {
+      if (matrix[i][f] !== val0) {
+        allIdentical = false;
+        break;
+      }
+    }
+    if (!allIdentical) break;
+  }
+  if (allIdentical) {
+    return { isLeaf: true, size: n };
+  }
+
+  const featureIndices = Array.from({ length: numFeatures }, (_, i) => i);
+  for (let i = featureIndices.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [featureIndices[i], featureIndices[j]] = [featureIndices[j], featureIndices[i]];
+  }
+
+  let selectedFeature = -1;
+  let minVal = 0;
+  let maxVal = 0;
+
+  for (const f of featureIndices) {
+    let minF = Infinity;
+    let maxF = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const val = matrix[i][f];
+      if (val < minF) minF = val;
+      if (val > maxF) maxF = val;
+    }
+    if (minF < maxF) {
+      selectedFeature = f;
+      minVal = minF;
+      maxVal = maxF;
+      break;
+    }
+  }
+
+  if (selectedFeature === -1) {
+    return { isLeaf: true, size: n };
+  }
+
+  const splitValue = minVal + rng() * (maxVal - minVal);
+  const left = [];
+  const right = [];
+
+  for (let i = 0; i < n; i++) {
+    if (matrix[i][selectedFeature] < splitValue) {
+      left.push(matrix[i]);
+    } else {
+      right.push(matrix[i]);
+    }
+  }
+
+  return {
+    isLeaf: false,
+    featureIndex: selectedFeature,
+    splitValue,
+    left: buildITree(left, currentDepth + 1, maxDepth, rng),
+    right: buildITree(right, currentDepth + 1, maxDepth, rng)
+  };
+}
+
+/**
+ * Compute path length for a single observation in an Isolation Tree
+ */
+function computePathLength(x, node, currentDepth) {
+  if (node.isLeaf) {
+    return currentDepth + calculateC(node.size);
+  }
+  if (x[node.featureIndex] < node.splitValue) {
+    return computePathLength(x, node.left, currentDepth + 1);
+  } else {
+    return computePathLength(x, node.right, currentDepth + 1);
+  }
+}
+
+/**
+ * Main Isolation Forest Algorithm Execution
+ */
+function runIsolationForest(matrix, numTrees = 100, subSampleSize = 256, seed = 42) {
+  const N = matrix.length;
+  if (N < 2) {
+    return { scores: N === 1 ? [0.5] : [], sampleSize: N };
+  }
+
+  const rng = createSeededRandom(seed);
+  const sampleSize = Math.min(subSampleSize, N);
+  const maxDepth = Math.ceil(Math.log2(sampleSize));
+
+  const trees = [];
+  for (let t = 0; t < numTrees; t++) {
+    const indices = Array.from({ length: N }, (_, i) => i);
+    for (let i = N - 1; i > N - 1 - sampleSize; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    const sample = indices.slice(N - sampleSize).map(idx => matrix[idx]);
+    trees.push(buildITree(sample, 0, maxDepth, rng));
+  }
+
+  const cN = calculateC(sampleSize);
+  const scores = [];
+
+  for (let i = 0; i < N; i++) {
+    const x = matrix[i];
+    let totalPath = 0;
+    for (let t = 0; t < numTrees; t++) {
+      totalPath += computePathLength(x, trees[t], 0);
+    }
+    const avgPath = totalPath / numTrees;
+    const score = cN > 0 ? Math.pow(2, -avgPath / cN) : 0.5;
+    scores.push(score);
+  }
+
+  return { scores, sampleSize, cN };
+}
+
+/**
  * Main Deterministic Plan Execution Function
  */
 function executeAnalysisPlan(plan, rows) {
@@ -1013,6 +1166,188 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
           targetColumn: targetCol,
           targetFactors,
           topPair
+        }
+      };
+    }
+
+    case 'anomaly_detection': {
+      let features = Array.isArray(plan.features) && plan.features.length > 0 ? plan.features : (plan.columns || []);
+
+      // Filter eligible features from filteredRows
+      if (features.length === 0 && filteredRows.length > 0) {
+        const sampleRow = filteredRows[0];
+        const allKeys = Object.keys(sampleRow);
+        features = allKeys.filter(k => {
+          const lower = k.trim().toLowerCase();
+          if (lower.includes('id') || lower.includes('code')) return false;
+          const val = getCellValue(sampleRow, k);
+          const num = parseNumber(val);
+          return !isNaN(num);
+        });
+      }
+
+      if (features.length < 2) {
+        return {
+          status: 'cannot_answer',
+          operation: 'anomaly_detection',
+          reason: 'For multivariate anomaly detection, at least two eligible numerical measures are required.',
+          result: [],
+          metadata: { rowsAnalyzed, missingValuesIgnored: 0 }
+        };
+      }
+
+      // Feature statistics calculation for contextual evidence
+      const featureDistributions = {};
+      features.forEach(f => {
+        const { numbers } = extractNumericArray(filteredRows, f);
+        if (numbers.length > 0) {
+          const sorted = [...numbers].sort((a, b) => a - b);
+          const mid = Math.floor(sorted.length / 2);
+          const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+          const q1 = sorted[Math.floor(sorted.length * 0.25)];
+          const q3 = sorted[Math.floor(sorted.length * 0.75)];
+          const iqr = q3 - q1;
+          featureDistributions[f] = { numbers, sorted, median, q1, q3, iqr };
+        }
+      });
+
+      // Complete case row extraction
+      const validRows = [];
+      const featureMatrix = [];
+      let rowsExcluded = 0;
+
+      filteredRows.forEach(row => {
+        let hasMissing = false;
+        const rowVector = [];
+
+        for (const f of features) {
+          const rawVal = getCellValue(row, f);
+          if (isMissingValue(rawVal)) {
+            hasMissing = true;
+            break;
+          }
+          const num = parseNumber(rawVal);
+          if (isNaN(num)) {
+            hasMissing = true;
+            break;
+          }
+          rowVector.push(num);
+        }
+
+        if (hasMissing) {
+          rowsExcluded++;
+        } else {
+          validRows.push(row);
+          featureMatrix.push(rowVector);
+        }
+      });
+
+      if (validRows.length < 2) {
+        return {
+          status: 'cannot_answer',
+          operation: 'anomaly_detection',
+          reason: 'Insufficient valid observations to run multivariate anomaly detection.',
+          result: [],
+          metadata: { rowsAnalyzed: validRows.length, rowsExcluded }
+        };
+      }
+
+      // Run Isolation Forest with fixed random seed 42
+      const seed = plan.random_state || plan.randomState || 42;
+      const { scores } = runIsolationForest(featureMatrix, 100, 256, seed);
+
+      // Determine classification threshold
+      const scoreSum = scores.reduce((a, b) => a + b, 0);
+      const scoreMean = scoreSum / scores.length;
+      const scoreVariance = scores.reduce((acc, s) => acc + Math.pow(s - scoreMean, 2), 0) / scores.length;
+      const scoreStd = Math.sqrt(scoreVariance);
+
+      let threshold = Math.max(0.58, scoreMean + 1.2 * scoreStd);
+      const maxScore = Math.max(...scores);
+      if (maxScore > 0.54 && threshold > maxScore) {
+        threshold = maxScore - 0.001;
+      }
+
+      // Construct detailed result objects for each record
+      let anomalyCount = 0;
+      let normalCount = 0;
+
+      const scoredRows = validRows.map((row, i) => {
+        const rawScore = scores[i];
+        const isAnomaly = rawScore >= threshold;
+        if (isAnomaly) anomalyCount++; else normalCount++;
+
+        // Contextual evidence generation per feature
+        const contextParts = [];
+        features.forEach((f, fIdx) => {
+          const val = featureMatrix[i][fIdx];
+          const dist = featureDistributions[f];
+          if (dist) {
+            if (dist.iqr > 0 && val > dist.q3 + 1.5 * dist.iqr) {
+              contextParts.push(`${f} (${val}) is substantially higher than dataset typical range (median: ${Number(dist.median.toFixed(2))})`);
+            } else if (dist.iqr > 0 && val < dist.q1 - 1.5 * dist.iqr) {
+              contextParts.push(`${f} (${val}) is substantially lower than dataset typical range (median: ${Number(dist.median.toFixed(2))})`);
+            }
+          }
+        });
+
+        const contextStr = contextParts.length > 0 
+          ? contextParts.join('; ')
+          : `Unusual combination of ${features.join(', ')} relative to dataset distribution`;
+
+        const idCol = Object.keys(row).find(k => k.toLowerCase().includes('id') || k.toLowerCase() === '#') || 'Order_ID';
+        const rawId = getCellValue(row, idCol);
+
+        const resultObj = {
+          [idCol]: rawId !== undefined ? rawId : i + 1,
+          'Anomaly Status': isAnomaly ? 'Anomaly' : 'Normal',
+          'Anomaly Score': Number(rawScore.toFixed(4)),
+          rawScore,
+          isAnomaly
+        };
+
+        features.forEach((f, fIdx) => {
+          resultObj[f] = featureMatrix[i][fIdx];
+        });
+
+        resultObj['Supporting Context'] = contextStr;
+
+        return resultObj;
+      });
+
+      // Sort by Anomaly Score descending
+      scoredRows.sort((a, b) => b.rawScore - a.rawScore);
+
+      const finalResultData = scoredRows.map(({ rawScore, isAnomaly, ...rest }) => rest);
+      resultData = finalResultData;
+
+      const scatterPoints = validRows.map((row, i) => ({
+        x: featureMatrix[i][0],
+        y: featureMatrix[i][1],
+        id: getCellValue(row, 'Order_ID') || i + 1,
+        status: scores[i] >= threshold ? 'Anomaly' : 'Normal',
+        score: Number(scores[i].toFixed(4))
+      }));
+
+      return {
+        status: 'success',
+        operation: 'anomaly_detection',
+        columnsUsed: features,
+        result: resultData,
+        metadata: {
+          operation: 'anomaly_detection',
+          method: 'Isolation Forest',
+          randomState: seed,
+          features,
+          totalRecords: rows.length,
+          rowsAnalyzed: validRows.length,
+          rowsExcluded,
+          anomaliesDetected: anomalyCount,
+          normalRecords: normalCount,
+          anomalyRate: Number(((anomalyCount / validRows.length) * 100).toFixed(2)),
+          scatterPoints,
+          featureX: features[0],
+          featureY: features[1]
         }
       };
     }
