@@ -201,7 +201,10 @@ export default function ResultVisualization({ execution, validation, question, t
                     <Tooltip
                       cursor={{ strokeDasharray: '3 3' }}
                       contentStyle={{ background: tooltipBg, borderColor: tooltipBorder, borderRadius: '8px', color: tooltipTextColor }}
-                      formatter={(val, name) => [formatValue(val), name === 'x' ? formatLabel(scatterColX) : formatLabel(scatterColY)]}
+                      formatter={(val, name, item) => [
+                        formatValue(val),
+                        formatLabel(item?.dataKey === 'x' ? scatterColX : (item?.dataKey === 'y' ? scatterColY : name))
+                      ]}
                     />
                     <Scatter name="Observations" data={scatterData} fill="var(--primary)" opacity={0.85} />
                   </ScatterChart>
@@ -378,7 +381,10 @@ export default function ResultVisualization({ execution, validation, question, t
                     <Tooltip
                       cursor={{ strokeDasharray: '3 3' }}
                       contentStyle={{ background: tooltipBg, borderColor: tooltipBorder, borderRadius: '8px', color: tooltipTextColor }}
-                      formatter={(val, name) => [formatValue(val), name === 'x' ? formatLabel(scatterColX) : formatLabel(scatterColY)]}
+                      formatter={(val, name, item) => [
+                        formatValue(val),
+                        formatLabel(item?.dataKey === 'x' ? scatterColX : (item?.dataKey === 'y' ? scatterColY : name))
+                      ]}
                     />
                     <Scatter name="Observations" data={scatterData} fill="var(--primary)" opacity={0.85} />
                   </ScatterChart>
@@ -451,7 +457,7 @@ export default function ResultVisualization({ execution, validation, question, t
           {/* Anomaly Scatter Plot */}
           {metadata.scatterPoints && metadata.scatterPoints.length > 0 && (
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <ScatterIcon size={20} style={{ color: 'var(--accent-rose)' }} />
                   <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
@@ -460,6 +466,12 @@ export default function ResultVisualization({ execution, validation, question, t
                 </div>
                 <span className="type-tag">Isolation Forest ({metadata.scatterPoints.length} points)</span>
               </div>
+
+              {metadata.featuresUsed && metadata.featuresUsed.length > 2 && (
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                  Note: Showing 2D projection ({formatLabel(metadata.featureX)} vs {formatLabel(metadata.featureY)}) of the {metadata.featuresUsed.length}-feature Isolation Forest model ({metadata.featuresUsed.map(f => formatLabel(f)).join(', ')}).
+                </div>
+              )}
 
               <div style={{ width: '100%', height: 340, marginTop: '0.5rem' }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -486,9 +498,9 @@ export default function ResultVisualization({ execution, validation, question, t
                     <Tooltip
                       cursor={{ strokeDasharray: '3 3' }}
                       contentStyle={{ background: tooltipBg, borderColor: tooltipBorder, borderRadius: '8px', color: tooltipTextColor }}
-                      formatter={(val, name) => [
+                      formatter={(val, name, item) => [
                         formatValue(val),
-                        name === 'x' ? formatLabel(metadata.featureX) : formatLabel(metadata.featureY)
+                        formatLabel(item?.dataKey === 'x' ? metadata.featureX : (item?.dataKey === 'y' ? metadata.featureY : name))
                       ]}
                     />
                     <Scatter
