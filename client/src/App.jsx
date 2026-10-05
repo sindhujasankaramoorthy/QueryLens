@@ -14,9 +14,9 @@ export default function App() {
   const [error, setError] = useState(null);
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
 
-  // Theme toggle state (dark default, persisted in localStorage)
+  // Theme toggle state (light default, persisted in localStorage)
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('psa01_theme') || 'dark';
+    return localStorage.getItem('psa01_theme') || 'light';
   });
 
   useEffect(() => {

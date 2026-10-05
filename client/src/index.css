@@ -2,52 +2,8 @@
    PSA01 DESIGN SYSTEM & THEME TOKENS (LIGHT & DARK MODE)
    ========================================================================== */
 
-/* Dark Mode Tokens (Default) */
+/* Light Mode Tokens (Default) */
 :root,
-[data-theme="dark"] {
-  --bg-app: #090d16;
-  --bg-surface: #0f172a;
-  --bg-card: #1e293b;
-  --bg-card-hover: #334155;
-  --bg-glass: rgba(15, 23, 42, 0.75);
-  --bg-input: #0f172a;
-
-  --border-color: rgba(255, 255, 255, 0.08);
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-active: #6366f1;
-  --border-hover: rgba(255, 255, 255, 0.18);
-
-  --primary: #6366f1;
-  --primary-hover: #4f46e5;
-  --primary-glow: rgba(99, 102, 241, 0.3);
-  --secondary: #8b5cf6;
-
-  --accent-cyan: #06b6d4;
-  --accent-emerald: #10b981;
-  --accent-amber: #f59e0b;
-  --accent-rose: #f43f5e;
-  --accent-violet: #a855f7;
-
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --text-dim: #64748b;
-  --text-inverse: #0f172a;
-
-  --chart-grid: rgba(255, 255, 255, 0.07);
-  --chart-stroke: #94a3b8;
-  --chart-tooltip-bg: #090d16;
-  --chart-tooltip-border: rgba(99, 102, 241, 0.4);
-
-  --table-header-bg: rgba(15, 23, 42, 0.85);
-  --table-row-hover: rgba(255, 255, 255, 0.02);
-  --table-border: rgba(255, 255, 255, 0.06);
-
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.4);
-}
-
-/* Light Mode Tokens */
 [data-theme="light"] {
   --bg-app: #f8fafc;
   --bg-surface: #ffffff;
@@ -89,6 +45,50 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+/* Dark Mode Tokens */
+[data-theme="dark"] {
+  --bg-app: #090d16;
+  --bg-surface: #0f172a;
+  --bg-card: #1e293b;
+  --bg-card-hover: #334155;
+  --bg-glass: rgba(15, 23, 42, 0.75);
+  --bg-input: #0f172a;
+
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-active: #6366f1;
+  --border-hover: rgba(255, 255, 255, 0.18);
+
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --primary-glow: rgba(99, 102, 241, 0.3);
+  --secondary: #8b5cf6;
+
+  --accent-cyan: #06b6d4;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+  --accent-violet: #a855f7;
+
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --text-inverse: #0f172a;
+
+  --chart-grid: rgba(255, 255, 255, 0.07);
+  --chart-stroke: #94a3b8;
+  --chart-tooltip-bg: #090d16;
+  --chart-tooltip-border: rgba(99, 102, 241, 0.4);
+
+  --table-header-bg: rgba(15, 23, 42, 0.85);
+  --table-row-hover: rgba(255, 255, 255, 0.02);
+  --table-border: rgba(255, 255, 255, 0.06);
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.4);
 }
 
 /* Global Reset & Typography */
