@@ -537,12 +537,12 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
 
     selectedFeatures = Array.from(new Set(selectedFeatures));
 
-    if (selectedFeatures.length < 2) {
+    if (selectedFeatures.length < 1) {
       return {
         isValid: true,
         status: 'cannot_answer',
         plan: null,
-        reason: 'For multivariate anomaly detection, at least two eligible numerical measures are required.'
+        reason: 'Anomaly detection requires at least one eligible numerical measure column.'
       };
     }
 
@@ -551,12 +551,10 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
       status: 'validated',
       plan: {
         operation: 'anomaly_detection',
-        method: 'isolation_forest',
+        method: 'iqr',
         features: selectedFeatures,
         columns: selectedFeatures,
-        contamination: plan.contamination || 'auto',
-        random_state: 42,
-        randomState: 42,
+        iqr_multiplier: 1.5,
         filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
       },
       reason: null

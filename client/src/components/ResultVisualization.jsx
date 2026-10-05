@@ -395,7 +395,7 @@ export default function ResultVisualization({ execution, validation, question, t
         </div>
       )}
 
-      {/* 3. Multivariate Anomaly Detection View (Phase 11) */}
+      {/* 3. Statistical Anomaly Detection View (Phase 7 IQR) */}
       {isAnomalyDetection && (
         <div>
           {/* Anomaly Summary Banner */}
@@ -412,7 +412,7 @@ export default function ResultVisualization({ execution, validation, question, t
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <AlertTriangle size={22} style={{ color: 'var(--accent-rose)' }} />
                 <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-rose)' }}>
-                  Multivariate Anomaly Detection (Isolation Forest)
+                  Statistical Anomaly Detection (Phase 7 IQR)
                 </span>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -427,7 +427,7 @@ export default function ResultVisualization({ execution, validation, question, t
 
             {/* Explanatory Distinction Banner */}
             <div style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', background: 'rgba(0, 0, 0, 0.2)', border: '1px dashed rgba(255, 255, 255, 0.15)', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-              <strong style={{ color: 'var(--accent-amber)' }}>Phase 7 vs Phase 11 Distinction:</strong> Phase 7 detects individual statistical outliers (IQR). Phase 11 detects <strong>multivariate anomalies</strong> — records with unusual combinations across multiple numerical measures using Isolation Forest (random state 42).
+              <strong style={{ color: 'var(--accent-amber)' }}>Statistical Outlier Detection (Phase 7 IQR):</strong> Reuses the standard Phase 7 Interquartile Range method [Q1 - 1.5xIQR, Q3 + 1.5xIQR] to flag records with extreme statistical values.
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem' }}>
@@ -448,8 +448,8 @@ export default function ResultVisualization({ execution, validation, question, t
                 <strong style={{ color: 'var(--accent-rose)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.anomalyRate || 0}%</strong>
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                <div>Random State</div>
-                <strong style={{ color: 'var(--primary)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.randomState || 42}</strong>
+                <div>IQR Multiplier</div>
+                <strong style={{ color: 'var(--primary)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>1.5x</strong>
               </div>
             </div>
           </div>
@@ -461,17 +461,11 @@ export default function ResultVisualization({ execution, validation, question, t
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <ScatterIcon size={20} style={{ color: 'var(--accent-rose)' }} />
                   <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                    Multivariate Anomaly Scatter Plot ({metadata.featureX} vs {metadata.featureY})
+                    Statistical Anomaly Scatter Plot ({metadata.featureX} vs {metadata.featureY})
                   </h4>
                 </div>
-                <span className="type-tag">Isolation Forest ({metadata.scatterPoints.length} points)</span>
+                <span className="type-tag">Phase 7 IQR ({metadata.scatterPoints.length} points)</span>
               </div>
-
-              {metadata.featuresUsed && metadata.featuresUsed.length > 2 && (
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                  Note: Showing 2D projection ({formatLabel(metadata.featureX)} vs {formatLabel(metadata.featureY)}) of the {metadata.featuresUsed.length}-feature Isolation Forest model ({metadata.featuresUsed.map(f => formatLabel(f)).join(', ')}).
-                </div>
-              )}
 
               <div style={{ width: '100%', height: 340, marginTop: '0.5rem' }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -510,7 +504,7 @@ export default function ResultVisualization({ execution, validation, question, t
                       opacity={0.75}
                     />
                     <Scatter
-                      name="Multivariate Anomalies"
+                      name="IQR Anomalies"
                       data={metadata.scatterPoints.filter(p => p.status === 'Anomaly')}
                       fill="#f43f5e"
                       shape="diamond"
@@ -586,8 +580,8 @@ export default function ResultVisualization({ execution, validation, question, t
             </div>
 
             <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1rem', fontSize: '0.78rem', color: 'var(--text-muted)', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
-              <span>Method: <strong style={{ color: 'var(--primary)' }}>Isolation Forest</strong></span>
-              <span>Random State: <strong style={{ color: 'var(--text-main)' }}>42</strong></span>
+              <span>Method: <strong style={{ color: 'var(--primary)' }}>Phase 7 IQR Statistical Outlier Detection</strong></span>
+              <span>IQR Multiplier: <strong style={{ color: 'var(--text-main)' }}>1.5x</strong></span>
               <span>Calculation: <strong style={{ color: 'var(--accent-emerald)' }}>100% Verifiable Deterministic</strong></span>
             </div>
           </div>

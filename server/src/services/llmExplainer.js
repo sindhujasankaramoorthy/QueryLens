@@ -144,9 +144,8 @@ function generateDeterministicExplanation(evidence) {
     const featureList = (metadata.features || []).join(', ');
     const countAnomalies = metadata.anomaliesDetected !== undefined ? metadata.anomaliesDetected : 0;
     const rate = metadata.anomalyRate !== undefined ? metadata.anomalyRate : 0;
-    const seed = metadata.randomState || 42;
 
-    let explanationText = `The Isolation Forest model (random state ${seed}) identified ${countAnomalies} multivariate anomalies (${rate}% anomaly rate) across ${rowsCount} analyzed records using features ${featureList}.`;
+    let explanationText = `The Phase 7 IQR statistical outlier detection method (1.5x IQR bound) identified ${countAnomalies} statistical anomalies (${rate}% anomaly rate) across ${rowsCount} analyzed records using features ${featureList}.`;
 
     if (result.length > 0) {
       const topAnomaly = result.find(r => r['Anomaly Status'] === 'Anomaly') || result[0];
@@ -155,12 +154,12 @@ function generateDeterministicExplanation(evidence) {
       const context = topAnomaly['Supporting Context'];
 
       if (context) {
-        explanationText += ` Record ${topId} exhibits the most unusual pattern: ${context}. The model detects unusual feature combinations relative to the overall dataset; it does not establish causation.`;
+        explanationText += ` Record ${topId} exhibits the most unusual pattern: ${context}. Statistical IQR outliers are values outside 1.5x IQR bounds and do not automatically indicate data errors.`;
       } else {
-        explanationText += ` These records exhibit unusual combinations of numerical feature values compared with the overall dataset. Correlation/Isolation does not imply causation.`;
+        explanationText += ` These records contain values outside typical 1.5x IQR bounds relative to the overall dataset. Statistical outliers do not automatically imply data errors.`;
       }
     } else {
-      explanationText += ` No multivariate anomalies were detected at the selected threshold.`;
+      explanationText += ` No statistical anomalies were detected outside the 1.5x IQR bounds.`;
     }
 
     return explanationText;

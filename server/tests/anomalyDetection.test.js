@@ -31,8 +31,6 @@ describe('Phase 11 — Advanced Anomaly Detection Tests', () => {
     const plan = getPlan(question);
 
     expect(plan.operation).toBe('anomaly_detection');
-    expect(plan.method).toBe('isolation_forest');
-    expect(plan.random_state).toBe(42);
 
     const validation = validateAnalysisPlan(plan, profile.columns);
     expect(validation.isValid).toBe(true);
@@ -44,15 +42,14 @@ describe('Phase 11 — Advanced Anomaly Detection Tests', () => {
     const execResult = executeAnalysisPlan(validation.plan, mockDataset);
     expect(execResult.status).toBe('success');
     expect(execResult.operation).toBe('anomaly_detection');
-    expect(execResult.metadata.method).toBe('Isolation Forest');
-    expect(execResult.metadata.randomState).toBe(42);
+    expect(execResult.metadata.method).toBe('IQR Statistical Outlier Detection');
+    expect(execResult.metadata.iqrMultiplier).toBe(1.5);
     expect(execResult.metadata.anomaliesDetected).toBeGreaterThanOrEqual(1);
     expect(execResult.metadata.scatterPoints).toBeDefined();
 
     const explanation = await generateExplanation({ ...execResult, question, plan: validation.plan }, { forceFallback: true });
-    expect(explanation).toContain('Isolation Forest model');
-    expect(explanation).toContain('42');
-    expect(explanation).toContain('does not establish causation');
+    expect(explanation).toContain('Phase 7 IQR statistical outlier detection method');
+    expect(explanation).toContain('Statistical IQR outliers');
   });
 
   test('TEST 2: Which records are anomalous?', async () => {
@@ -97,7 +94,7 @@ describe('Phase 11 — Advanced Anomaly Detection Tests', () => {
 
     const explanation = await generateExplanation({ ...execResult, question, plan: validation.plan }, { forceFallback: true });
     expect(explanation).toContain('1008');
-    expect(explanation).toContain('does not establish causation');
+    expect(explanation).toContain('Statistical IQR outliers');
   });
 
   test('TEST 5: Find anomalies using Order_ID and Sales. (REJECT Order_ID as feature)', async () => {
@@ -109,15 +106,14 @@ describe('Phase 11 — Advanced Anomaly Detection Tests', () => {
     expect(validation.reason).toContain('Order_ID is an identifier and cannot be used as an anomaly-detection feature.');
   });
 
-  test('TEST 6: Distinguish Phase 7 IQR outliers and Phase 11 multivariate anomalies', async () => {
-    const execResult = executeAnalysisPlan({ operation: 'anomaly_detection', features: ['Sales', 'Quantity'], random_state: 42 }, mockDataset);
+  test('TEST 6: Reuses Phase 7 IQR statistical outlier method', async () => {
+    const execResult = executeAnalysisPlan({ operation: 'anomaly_detection', features: ['Sales', 'Quantity'] }, mockDataset);
     expect(execResult.metadata.operation).toBe('anomaly_detection');
-    expect(execResult.metadata.method).toBe('Isolation Forest');
+    expect(execResult.metadata.method).toBe('IQR Statistical Outlier Detection');
+    expect(execResult.metadata.iqrMultiplier).toBe(1.5);
 
-    // Result should explicitly expose Anomaly Status and Anomaly Score, NOT IQR Outlier
     expect(execResult.result[0]['Anomaly Status']).toBeDefined();
     expect(execResult.result[0]['Anomaly Score']).toBeDefined();
-    expect(execResult.result[0]['IQR Outlier']).toBeUndefined();
   });
 
 });
