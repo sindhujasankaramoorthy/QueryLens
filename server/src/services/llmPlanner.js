@@ -146,36 +146,29 @@ function findColumnInQueryDetails(columns, question) {
     const normCol = normalizeText(c.name);
     if (!normCol) return { col: c, score: 0, len: 0 };
 
-    if (normQ.includes(normCol)) {
+    const exactRegex = new RegExp(`\\b${normCol.replace(/\s+/g, '\\s+')}\\b`, 'i');
+    if (exactRegex.test(normQ)) {
       return { col: c, score: 4, len: normCol.length };
     }
 
-    const colWords = normCol.split(' ').filter(w => w.length > 1);
-    if (colWords.length > 1) {
-      const allWordsPresent = colWords.every(w => {
+    const colWords = normCol.split(' ').filter(w => w.length > 0);
+    const significantWords = colWords.filter(w => w !== 'id' && w !== 'f' && w !== 'c' && w !== 'percent' && w !== 'bpm');
+
+    if (significantWords.length > 0) {
+      const allSigPresent = significantWords.every(w => {
         const stem = w.endsWith('s') ? w.slice(0, -1) : w;
         return new RegExp(`\\b${w}\\b|\\b${stem}\\b|\\b${stem}s\\b`, 'i').test(normQ);
       });
-      if (allWordsPresent) {
+      if (allSigPresent) {
         return { col: c, score: 3, len: normCol.length };
       }
-    }
 
-    const keyWords = colWords.filter(w => w !== 'id');
-    if (keyWords.length > 0) {
-      const anyKeyWordPresent = keyWords.some(w => {
+      const anySigPresent = significantWords.some(w => {
         const stem = w.endsWith('s') ? w.slice(0, -1) : w;
         return new RegExp(`\\b${w}\\b|\\b${stem}\\b|\\b${stem}s\\b`, 'i').test(normQ);
       });
-      if (anyKeyWordPresent) {
+      if (anySigPresent) {
         return { col: c, score: 2, len: normCol.length };
-      }
-    }
-
-    if (!normCol.includes(' ')) {
-      const stem = normCol.endsWith('s') ? normCol.slice(0, -1) : normCol;
-      if (new RegExp(`\\b${normCol}\\b|\\b${stem}\\b|\\b${stem}s\\b`, 'i').test(normQ)) {
-        return { col: c, score: 1, len: normCol.length };
       }
     }
 
@@ -193,45 +186,196 @@ function findColumnInQuery(columns, question) {
   return findColumnInQueryDetails(columns, question).col;
 }
 
+function parseNumber(val) {
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') {
+    const trimmed = val.trim().replace(/,/g, '');
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+      return Number(trimmed);
+    }
+  }
+  return NaN;
+}
+
 function extractFiltersFromQuery(question, schemaColumns) {
   const q = question.toLowerCase();
   const filters = [];
 
-  const catCols = (schemaColumns || []).filter(c => 
-    (c.type === 'categorical' || c.type === 'text' || c.name.toLowerCase().includes('region') || c.name.toLowerCase().includes('category') || c.name.toLowerCase().includes('segment')) && 
-    c.semanticType !== 'identifier' && !isIdColumn(c.name)
-  );
+  const numericCols = (schemaColumns || []).filter(c => (c.type === 'integer' || c.type === 'float' || c.type === 'number') && !isIdColumn(c.name));
+  const catCols = (schemaColumns || []).filter(c => (c.type === 'categorical' || c.type === 'text' || c.type === 'string') && !isIdColumn(c.name));
 
-  // 1. Check known categorical values
-  const knownRegionValues = ['south', 'north', 'east', 'west', 'central', 'pacific', 'atlantic'];
-  const regionCol = (schemaColumns || []).find(c => c.name.toLowerCase().includes('region')) || catCols[0];
+  const matchColInText = (text) => {
+    if (!text) return null;
+    const res = findColumnInQueryDetails(schemaColumns, text);
+    return res.score > 0 ? res.col : null;
+  };
 
-  if (regionCol) {
-    for (const val of knownRegionValues) {
-      const regExp = new RegExp(`\\b${val}\\b`, 'i');
-      if (regExp.test(question)) {
-        filters.push({
-          column: regionCol.name,
-          operator: '=',
-          value: val.charAt(0).toUpperCase() + val.slice(1)
-        });
-        break;
+  const cleanNum = (str) => {
+    if (!str) return NaN;
+    const cleaned = String(str).replace(/,/g, '').replace(/°?[FfCc]|%|bpm|usd|\$/gi, '').trim();
+    return parseNumber(cleaned);
+  };
+
+  // 1. Symbolic Operators: e.g. "Temperature_F > 100", "Age >= 60", "SpO2_Percent < 95", "Region = South"
+  const symbolicRegex = /([A-Za-z0-9_]+)\s*(>=|<=|>|<|!=|==|=)\s*("([^"]+)"|'([^']+)'|(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)|([A-Za-z0-9_]+))/gi;
+  let symMatch;
+  while ((symMatch = symbolicRegex.exec(question)) !== null) {
+    const colNameRaw = symMatch[1];
+    let op = symMatch[2];
+    if (op === '==') op = '=';
+    const valRaw = symMatch[4] || symMatch[5] || symMatch[6] || symMatch[7];
+
+    const colObj = matchColInText(colNameRaw);
+    if (colObj && valRaw !== undefined) {
+      let parsedVal = valRaw;
+      if (colObj.type === 'integer' || colObj.type === 'float') {
+        const num = cleanNum(valRaw);
+        if (!isNaN(num)) parsedVal = num;
+      }
+      filters.push({ column: colObj.name, operator: op, value: parsedVal });
+    }
+  }
+
+  // 2. Age / Special Numeric Attribute Phrases (e.g. "older than 60", "aged over 50")
+  if (filters.length === 0) {
+    const agePhrases = [
+      { regex: /(?:older\s+than|aged\s+(?:over|above)|age\s+(?:above|over|greater\s+than))\s+(-?\d+)/gi, op: '>' },
+      { regex: /(?:younger\s+than|aged\s+(?:under|below)|age\s+(?:below|under|less\s+than))\s+(-?\d+)/gi, op: '<' },
+      { regex: /(?:at\s+least|aged)\s+(-?\d+)\s+(?:years\s+old|years)/gi, op: '>=' }
+    ];
+    for (const ap of agePhrases) {
+      let m;
+      while ((m = ap.regex.exec(question)) !== null) {
+        const numVal = cleanNum(m[1]);
+        const ageCol = (schemaColumns || []).find(c => c.name.toLowerCase().includes('age'));
+        if (ageCol && !isNaN(numVal)) {
+          filters.push({ column: ageCol.name, operator: ap.op, value: numVal });
+        }
       }
     }
   }
 
-  // 2. Generic pattern matching
+  // 3. Natural-language Numeric Comparison Patterns
   if (filters.length === 0) {
-    const pattern = /(?:for|in|where|of|from)\s+(?:the\s+)?([A-Za-z0-9_\-]+)\s*(?:region|category|segment|department|branch|type)?/i;
-    const match = question.match(pattern);
-    if (match && match[1]) {
-      const valCandidate = match[1].trim();
-      const ignoreWords = ['the', 'a', 'an', 'each', 'every', 'all', 'by', 'monthly', 'yearly', 'sales', 'quantity', 'total', 'average', 'highest', 'lowest', 'next', 'what', 'show'];
-      if (!ignoreWords.includes(valCandidate.toLowerCase()) && valCandidate.length > 1) {
-        const targetCat = catCols.find(c => ['region', 'category', 'segment', 'type'].some(k => c.name.toLowerCase().includes(k))) || catCols[0];
-        if (targetCat) {
-          const formattedVal = valCandidate.charAt(0).toUpperCase() + valCandidate.slice(1);
-          filters.push({ column: targetCat.name, operator: '=', value: formattedVal });
+    const numericPhrases = [
+      { regex: /([A-Za-z0-9_]+)\s+(?:is\s+)?(?:greater\s+than\s+or\s+equal\s+to|at\s+least|minimum\s+of)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)/gi, op: '>=' },
+      { regex: /([A-Za-z0-9_]+)\s+(?:is\s+)?(?:less\s+than\s+or\s+equal\s+to|at\s+most|maximum\s+of)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)/gi, op: '<=' },
+      { regex: /([A-Za-z0-9_]+)\s+(?:is\s+)?(?:above|over|greater\s+than|more\s+than|exceeding|higher\s+than|older\s+than)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)/gi, op: '>' },
+      { regex: /([A-Za-z0-9_]+)\s+(?:is\s+)?(?:below|under|less\s+than|fewer\s+than|lower\s+than|younger\s+than)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)/gi, op: '<' },
+      { regex: /([A-Za-z0-9_]+)\s+(?:is\s+)?(?:equal\s+to|equals|is\s+exactly|is)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)/gi, op: '=' },
+      { regex: /([A-Za-z0-9_]+)\s+(?:of\s+)?(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)\s*(?:and\s+above|or\s+more|or\s+greater|or\s+higher)/gi, op: '>=' },
+      { regex: /([A-Za-z0-9_]+)\s+(?:of\s+)?(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)\s*(?:and\s+below|or\s+less|or\s+fewer|or\s+lower)/gi, op: '<=' }
+    ];
+
+    for (const p of numericPhrases) {
+      let m;
+      while ((m = p.regex.exec(question)) !== null) {
+        const colCandidate = m[1];
+        const numVal = cleanNum(m[2]);
+        const colObj = matchColInText(colCandidate);
+        if (colObj && !isNaN(numVal)) {
+          filters.push({ column: colObj.name, operator: p.op, value: numVal });
+        }
+      }
+    }
+  }
+
+  // 3. Reverse Natural-language Numeric Comparison Patterns (e.g. "above 100°F temperature", "below 95 SpO2")
+  if (filters.length === 0) {
+    const reversePhrases = [
+      { regex: /(?:above|over|greater\s+than|more\s+than|exceeding|higher\s+than|older\s+than)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)\s+(?:in|for|of|with)?\s*([A-Za-z0-9_]+)/gi, op: '>' },
+      { regex: /(?:below|under|less\s+than|fewer\s+than|lower\s+than|younger\s+than)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)\s+(?:in|for|of|with)?\s*([A-Za-z0-9_]+)/gi, op: '<' },
+      { regex: /(?:at\s+least|minimum\s+of)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)\s+(?:in|for|of|with)?\s*([A-Za-z0-9_]+)/gi, op: '>=' },
+      { regex: /(?:at\s+most|maximum\s+of)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)\s+(?:in|for|of|with)?\s*([A-Za-z0-9_]+)/gi, op: '<=' }
+    ];
+
+    for (const p of reversePhrases) {
+      let m;
+      while ((m = p.regex.exec(question)) !== null) {
+        const numVal = cleanNum(m[1]);
+        const colCandidate = m[2];
+        const colObj = matchColInText(colCandidate);
+        if (colObj && !isNaN(numVal)) {
+          filters.push({ column: colObj.name, operator: p.op, value: numVal });
+        }
+      }
+    }
+  }
+
+  // 4. Standalone Operator + Number when schema has a matching numeric column in query
+  if (filters.length === 0) {
+    const standalonePatterns = [
+      { regex: /(?:above|over|greater\s+than|more\s+than|exceeding|higher\s+than|older\s+than)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)/gi, op: '>' },
+      { regex: /(?:below|under|less\s+than|fewer\s+than|lower\s+than|younger\s+than)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)/gi, op: '<' },
+      { regex: /(?:at\s+least|minimum\s+of)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)/gi, op: '>=' },
+      { regex: /(?:at\s+most|maximum\s+of)\s+(-?\d+(?:[,\d]*\d)?(?:\.\d+)?\s*(?:°?[FfCc]|%|bpm)?)/gi, op: '<=' }
+    ];
+
+    for (const p of standalonePatterns) {
+      let m;
+      while ((m = p.regex.exec(question)) !== null) {
+        const numVal = cleanNum(m[1]);
+        if (!isNaN(numVal)) {
+          const matchedNumericCol = numericCols.find(c => findColumnInQuery([c], question));
+          if (matchedNumericCol) {
+            filters.push({ column: matchedNumericCol.name, operator: p.op, value: numVal });
+          }
+        }
+      }
+    }
+  }
+
+  // 5. Categorical Equality Filter Extraction
+  if (filters.length === 0) {
+    const knownRegionValues = ['south', 'north', 'east', 'west', 'central', 'pacific', 'atlantic'];
+    const regionCol = (schemaColumns || []).find(c => c.name.toLowerCase().includes('region')) || catCols[0];
+
+    if (regionCol) {
+      for (const val of knownRegionValues) {
+        const regExp = new RegExp(`\\b${val}\\b`, 'i');
+        if (regExp.test(question)) {
+          filters.push({
+            column: regionCol.name,
+            operator: '=',
+            value: val.charAt(0).toUpperCase() + val.slice(1)
+          });
+          break;
+        }
+      }
+    }
+
+    if (filters.length === 0) {
+      const pattern = /(?:for|in|where|of|from)\s+(?:the\s+)?([A-Za-z0-9_\-]+)\s*(?:region|category|segment|department|branch|type)?/i;
+      const match = question.match(pattern);
+      if (match && match[1]) {
+        const valCandidate = match[1].trim();
+        const ignoreWords = ['the', 'a', 'an', 'each', 'every', 'all', 'by', 'monthly', 'yearly', 'sales', 'quantity', 'total', 'average', 'highest', 'lowest', 'next', 'what', 'show', 'patients', 'records'];
+        if (!ignoreWords.includes(valCandidate.toLowerCase()) && valCandidate.length > 1) {
+          const targetCat = catCols.find(c => ['region', 'category', 'segment', 'type'].some(k => c.name.toLowerCase().includes(k))) || catCols[0];
+          if (targetCat) {
+            const formattedVal = valCandidate.charAt(0).toUpperCase() + valCandidate.slice(1);
+            filters.push({ column: targetCat.name, operator: '=', value: formattedVal });
+          }
+        }
+      }
+    }
+  }
+
+  // 6. Qualitative Descriptors (e.g. "high temperature", "low SpO2", "high age", "low heart rate")
+  if (filters.length === 0) {
+    const qualPhrases = [
+      { regex: /(?:high|elevated|feverish|warm|hot)\s+(?:temperature|temp|fever)/i, col: 'Temperature_F', op: '>', val: 100 },
+      { regex: /(?:low|decreased|poor|deficient|dropped)\s+(?:spo2|oxygen|saturation)/i, col: 'SpO2_Percent', op: '<', val: 95 },
+      { regex: /(?:high|elevated|fast|tachycardic)\s+(?:heart\s*rate|bpm|pulse)/i, col: 'Heart_Rate_BPM', op: '>', val: 90 },
+      { regex: /(?:high|elderly|older|senior)\s+(?:age|patients|people)/i, col: 'Age', op: '>=', val: 60 }
+    ];
+    for (const qp of qualPhrases) {
+      if (qp.regex.test(question)) {
+        const matchedCol = (schemaColumns || []).find(c => c.name.toLowerCase().includes(qp.col.toLowerCase()) || findColumnInQuery([c], qp.col));
+        if (matchedCol) {
+          if (!filters.some(f => f.column === matchedCol.name)) {
+            filters.push({ column: matchedCol.name, operator: qp.op, value: qp.val });
+          }
         }
       }
     }
@@ -655,12 +799,31 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
     };
   }
 
+  const isCountQuery = q.includes('how many') || q.includes('count') || q.includes('unique') || q.includes('number of');
+  const isAnalyticsQuery = q.includes('total') || q.includes('sum') || q.includes('average') || q.includes('avg') || q.includes('mean') || q.includes('median') || q.includes('min') || q.includes('max') || q.includes('trend') || q.includes('forecast') || q.includes('predict') || q.includes('correlation') || q.includes('anomaly') || q.includes('over time') || q.includes('by month') || q.includes('monthly') || q.includes('yearly') || q.includes('daily') || q.includes('quarterly') || q.includes('weekly') || q.includes('by year') || q.includes('by date');
+  const isShowQuery = !isAnalyticsQuery && (q.includes('show') || q.includes('list') || q.includes('display') || q.includes('view') || q.includes('values') || q.includes('select') || q.includes('get') || q.includes('which') || q.includes('who') || q.includes('find') || q.includes('filter') || q.includes('search'));
+
+  // Route filtered queries asking to show/list rows (e.g. "Show patients with Age >= 60", "Show all patients with temperature above 100°F")
+  // If the query asks for a numeric measure distinct from the filter column (e.g. "Show sales for the South region"), allow it to fall through to filtered sum aggregation.
+  const filterCols = extractedFilters.map(f => f.column.toLowerCase());
+  const nonFilterNumeric = matchedNumeric && !filterCols.includes(matchedNumeric.name.toLowerCase()) ? matchedNumeric : null;
+
+  if (isShowQuery && extractedFilters.length > 0 && !nonFilterNumeric) {
+    const targetCol = matchedId ? matchedId.name : (idCols[0] ? idCols[0].name : (schemaColumns[0] ? schemaColumns[0].name : 'Patient_ID'));
+    return {
+      status: 'success',
+      plan: {
+        operation: 'select',
+        column: targetCol,
+        measure: targetCol,
+        limit: 50,
+        filters: extractedFilters
+      }
+    };
+  }
+
   // Handle explicit queries on identifier columns (e.g. Order_ID)
   if (matchedId) {
-    const isCountQuery = q.includes('how many') || q.includes('count') || q.includes('unique') || q.includes('number of');
-    const isAnalyticsQuery = q.includes('total') || q.includes('sum') || q.includes('average') || q.includes('avg') || q.includes('mean') || q.includes('median') || q.includes('min') || q.includes('max') || q.includes('trend') || q.includes('forecast') || q.includes('predict') || q.includes('correlation') || q.includes('anomaly') || q.includes('over time') || q.includes('by month') || q.includes('by year') || q.includes('by date');
-    const isShowQuery = !isAnalyticsQuery && (q.includes('show') || q.includes('list') || q.includes('display') || q.includes('view') || q.includes('values') || q.includes('select') || q.includes('get'));
-
     if (isCountQuery) {
       return {
         status: 'success',

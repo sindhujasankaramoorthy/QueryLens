@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node tests/profiler.test.js && node tests/planner.test.js && node tests/engine.test.js && node tests/visualization.test.js && node tests/explanation.test.js && node tests/full_audit.test.js && node tests/insights.test.js && node tests/correlation.test.js && node tests/semanticType.test.js && node tests/dataQuality.test.js && node tests/timeSeries.test.js && node tests/decisionSupport.test.js",
+    "test": "node tests/profiler.test.js && node tests/planner.test.js && node tests/engine.test.js && node tests/visualization.test.js && node tests/explanation.test.js && node tests/full_audit.test.js && node tests/insights.test.js && node tests/correlation.test.js && node tests/semanticType.test.js && node tests/dataQuality.test.js && node tests/timeSeries.test.js && node tests/decisionSupport.test.js && node tests/filter.test.js",
     "test:phase1": "node tests/profiler.test.js",
     "test:phase2": "node tests/planner.test.js",
     "test:phase3": "node tests/engine.test.js",

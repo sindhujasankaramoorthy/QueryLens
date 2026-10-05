@@ -231,24 +231,22 @@ function detectDuplicates(rows, columns) {
   };
 }
 
-function isIdentifierColumn(colName, inferredType, uniqueCount, validCount) {
+function isIdentifierColumn(colName, inferredType, uniqueCount, validCount, sampleValues = []) {
   if (!colName) return false;
   const name = String(colName).trim().toLowerCase();
 
-  const metricKeywords = ['sales', 'amount', 'price', 'quantity', 'revenue', 'cost', 'rating', 'profit', 'discount', 'score', 'total', 'val', 'value'];
-  if (metricKeywords.some(k => name.includes(k))) {
-    return false;
-  }
+  // 1. Metric keywords & units: If column name contains explicit measure/metric indicators, it is NOT an identifier unless it specifically ends with _id/id.
+  const metricKeywords = [
+    'sales', 'amount', 'price', 'quantity', 'revenue', 'cost', 'rating', 'profit', 'discount', 'score',
+    'total', 'val', 'value', 'age', 'temp', 'temperature', 'spo2', 'bpm', 'rate', 'heart_rate', 'bp',
+    'pressure', 'height', 'weight', 'salary', 'income', 'percentage', 'percent', 'count', 'frequency',
+    'ratio', 'depth', 'width', 'length', 'distance', 'speed', 'duration', 'time_spent', 'level', 'index_score'
+  ];
 
-  const idPattern = /^(.+[\_\-\s])?(id|identifier|code|key|sku|uuid|guid|seq|number|num|#)$/i;
-  const directMatch = (
+  const hasUnitSuffix = /(?:_[fFcC]|_Percent|_percent|_BPM|_bpm|_mg|_kg|_cm|_mm|_m|_usd|_EUR|_GB|_MB|_KB|_GB)$/.test(colName);
+
+  const isExplicitIdName = /^(.*[\_\-\s])?(id|identifier|code|key|sku|uuid|guid|seq|#)$/i.test(name) ||
     name === 'id' ||
-    name === 'code' ||
-    name === 'key' ||
-    name === 'sku' ||
-    name === 'uuid' ||
-    name === 'guid' ||
-    name === '#' ||
     name.endsWith('_id') ||
     name.endsWith('-id') ||
     name.endsWith(' id') ||
@@ -257,30 +255,44 @@ function isIdentifierColumn(colName, inferredType, uniqueCount, validCount) {
     name.includes('order_id') ||
     name.includes('customer_id') ||
     name.includes('user_id') ||
+    name.includes('patient_id') ||
     name.includes('product_id') ||
     name.includes('transaction_id') ||
     name.includes('account_id') ||
     name.includes('invoice_id') ||
-    idPattern.test(name)
-  );
+    name.includes('employee_id') ||
+    name.includes('student_id');
 
-  if (directMatch) {
+  // If column name has metric keywords / units and is NOT an explicit ID name, it's never an identifier
+  if ((hasUnitSuffix || metricKeywords.some(k => name === k || name.startsWith(k + '_') || name.endsWith('_' + k) || name.includes('_' + k + '_') || name.includes(k))) && !isExplicitIdName) {
+    return false;
+  }
+
+  // 2. Explicit Identifier Naming Patterns
+  if (isExplicitIdName) {
     return true;
   }
 
-  // High-cardinality integer columns with mostly unique values should also be candidates for identifier classification.
-  if (inferredType === 'integer' && validCount >= 10) {
-    const uniqueRatio = uniqueCount / validCount;
-    if (uniqueRatio >= 0.85) {
-      return true;
+  // 3. Non-numeric / String Value Patterns (e.g., "P001", "ORD-101", "CUST-999", "UUID-xxxx")
+  if (sampleValues && sampleValues.length > 0) {
+    const stringSamples = sampleValues.filter(v => typeof v === 'string' && v.trim() !== '');
+    if (stringSamples.length > 0 && validCount > 0) {
+      const alphaNumIdPattern = /^[A-Za-z]{1,4}[-_\s]?\d{1,10}$/;
+      const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      const isAlphaNumIds = stringSamples.every(v => alphaNumIdPattern.test(v.trim()) || uuidPattern.test(v.trim()));
+      const uniqueRatio = uniqueCount / validCount;
+      if (isAlphaNumIds && uniqueRatio >= 0.8) {
+        return true;
+      }
     }
   }
 
+  // CRITICAL RULE: High uniqueness ratio alone on a numeric column (integer or float) NEVER qualifies as an identifier!
   return false;
 }
 
-function inferSemanticType(colName, inferredType, uniqueCount, validCount) {
-  if (isIdentifierColumn(colName, inferredType, uniqueCount, validCount)) {
+function inferSemanticType(colName, inferredType, uniqueCount, validCount, sampleValues = []) {
+  if (isIdentifierColumn(colName, inferredType, uniqueCount, validCount, sampleValues)) {
     return 'identifier';
   }
   if (inferredType === 'date' || inferredType === 'datetime') {
@@ -463,7 +475,7 @@ function profileDataset(parsedData) {
     const uniqueCount = uniqueValuesSet.size;
 
     const { type, mixed, dateAmbiguous } = inferColumnType(validValues);
-    const semanticType = inferSemanticType(colName, type, uniqueCount, validValues.length);
+    const semanticType = inferSemanticType(colName, type, uniqueCount, validValues.length, sampleValues);
 
     let statistics = null;
     let identifierStats = null;

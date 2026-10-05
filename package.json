@@ -6,6 +6,8 @@
   "scripts": {
     "server": "npm run start --prefix server",
     "client": "npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "start": "node server/src/index.js",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "test": "npm run test --prefix server"
   },

@@ -266,11 +266,29 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
     if (err) return { isValid: false, status: 'rejected', plan: null, reason: err };
   }
 
+  const validatedFilters = [];
   if (plan.filters && Array.isArray(plan.filters)) {
     for (const f of plan.filters) {
       if (f.column) {
         const err = checkColumn(f.column, 'filter');
         if (err) return { isValid: false, status: 'rejected', plan: null, reason: err };
+
+        const canonicalCol = getCanonicalColName(f.column);
+        const colType = getColType(canonicalCol);
+        let val = f.value;
+        if (isNumericType(colType)) {
+          const num = typeof val === 'number' ? val : Number(String(val).replace(/,/g, ''));
+          if (!isNaN(num)) val = num;
+        }
+
+        let op = f.operator || '=';
+        if (op === '==') op = '=';
+
+        validatedFilters.push({
+          column: canonicalCol,
+          operator: op,
+          value: val
+        });
       }
     }
   }
@@ -291,7 +309,7 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
         column: getCanonicalColName(targetCol),
         measure: getCanonicalColName(targetCol),
         limit: plan.limit || 50,
-        filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
+        filters: validatedFilters
       },
       reason: null
     };

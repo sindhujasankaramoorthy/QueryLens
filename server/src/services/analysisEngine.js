@@ -2352,9 +2352,9 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
     }
 
     case 'select': {
-      const targetCol = plan.column || plan.measure || (schemaColumns[0] ? schemaColumns[0].name : 'Order_ID');
+      const targetCol = plan.column || plan.measure || 'Order_ID';
       const limitVal = plan.limit || 50;
-      const values = rows.slice(0, limitVal).map(r => getCellValue(r, targetCol)).filter(v => v !== undefined && v !== null);
+      const values = filteredRows.slice(0, limitVal).map(r => getCellValue(r, targetCol)).filter(v => v !== undefined && v !== null);
       resultData = values.map(val => ({ [targetCol]: val }));
       columnsUsed = [targetCol];
       return {
