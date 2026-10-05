@@ -1,45 +1,8 @@
 # 🔍 QueryLens
 
-[![CI/CD Pipeline - Test & Build](https://github.com/sindhujasankaramoorthy/QueryLens/actions/workflows/ci.yml/badge.svg)](https://github.com/sindhujasankaramoorthy/QueryLens/actions/workflows/ci.yml)
+**AI-powered natural language data analytics with validated execution.**
 
-**Ask questions about your data in plain English — get validated, reproducible answers.**
-
-QueryLens is an AI-powered analytics platform that turns natural-language questions into a structured **SVG analytical plan**, validates it, executes it deterministically, and explains the result in plain language.
-
-> *"Show sales by region"* · *"What is the correlation between Sales and Customer_Rating?"* · *"Forecast monthly sales for the next 3 months."*
-
----
-
-## Table of Contents
-
-- [Why QueryLens?](#-why-querylens)
-- [How It Works](#-how-it-works)
-- [Features](#-features)
-- [Example Queries](#-example-queries)
-- [Example Workflow](#-example-workflow)
-- [Reliability Approach](#-reliability-approach)
-- [Cross-Domain Use](#-cross-domain-use)
-- [Tech Stack](#-tech-stack)
-- [Installation](#-installation)
-- [Project Structure](#-project-structure)
-- [Future Scope](#-future-scope)
-
----
-
-## 🚀 Why QueryLens?
-
-Data analysis usually demands SQL, data manipulation, statistics, visualization tools and forecasting know-how. QueryLens removes that barrier.
-
-The key difference: QueryLens **does not simply ask an AI model for an answer**. The AI decides *what* analysis to run; the numbers come from *deterministic computation*.
-
-| Problem | How QueryLens solves it |
-|---|---|
-| Technical barrier | Ask in plain English, no SQL or code |
-| Manual analysis | Correlations, trends, anomalies and forecasts are computed for you |
-| Unreliable AI answers | Results are executed deterministically, not generated |
-| Lack of transparency | The SVG plan shows the intended operation |
-| Visualization difficulty | Charts are produced directly from the query |
-| Hard-to-read numbers | AI explanations are grounded in computed results |
+QueryLens lets users analyze datasets by asking questions in **plain English** instead of writing SQL or code. Each request is converted into a structured **SVG analytical plan**, validated before execution, computed deterministically, visualized, and explained using the actual results.
 
 ---
 
@@ -61,118 +24,177 @@ Numerical Result
         └──▶ Grounded AI Explanation
 ```
 
-**Plan validation** blocks problems before execution, such as:
+### Core Principle
 
-- Invalid columns
-- Unsupported operations
-- Incorrect analytical combinations
-- Unnecessary aggregation
-- Invalid numerical operations (e.g. an identifier like `Order_ID` is never summed just because it is numeric)
+> **The AI decides what analysis to perform; deterministic computation produces the result.**
+
+This separates AI reasoning from numerical computation and helps keep analytical results verifiable.
 
 ---
 
 ## ✨ Features
 
-### 💬 Natural Language Analytics
-Ask questions in plain English, no programming required.
-
-### 🧠 SVG-Based Analytical Planning
-Requests are converted into a structured plan, separating *what the AI thinks should happen* from *what the system actually executes*.
-
-### 📊 Supported Analytics
-
-| Category | Details |
-|---|---|
-| **Descriptive** | Sum, average, min, max, count, grouped aggregation |
-| **Correlation** | Pearson correlation, reporting coefficient, direction, strength and rows analyzed |
-| **Trend analysis** | Time-based aggregation (e.g. monthly) with trend direction |
-| **Anomaly detection** | IQR method: values outside `Q1 − 1.5×IQR` or `Q3 + 1.5×IQR` |
-| **Forecasting** | Historical values, forecast values, prediction intervals, horizon |
-| **Forecast evaluation** | MAE, RMSE, MAPE |
-
-### 📋 Executive Summary
-Generates a high-level dataset summary based on computed evidence, not unsupported statements.
-
-### 💡 Evidence-Based Recommendations
-Recommendations are grounded in calculated trends, forecasts and other findings.
+* 🗣️ **Natural Language Analytics** — analyze datasets without writing SQL or code
+* 🧩 **SVG Analytical Planning** — converts user requests into structured analytical operations
+* 🛡️ **Plan Validation** — validates columns, operations, data types, and analytical logic before execution
+* ⚡ **Deterministic Execution** — calculations are performed on the actual dataset
+* 📊 **Automatic Visualization** — generates visual output appropriate to the analysis
+* 🧠 **Grounded AI Explanations** — explanations are based on computed results
+* 🔎 **Semantic Data Understanding** — distinguishes identifiers, measures, categorical fields, and date/time fields
+* 🚨 **Error Handling** — detects invalid or unsupported analytical requests
 
 ---
 
-## 🧪 Example Queries
+## 📊 Supported Analytics
 
-| Type | Query |
-|---|---|
-| Basic | `What are the total sales?` · `What is the average customer rating?` |
-| Grouping | `Show sales by region.` |
-| Filtering | `Show sales for the South region.` |
-| Correlation | `What is the correlation between Sales and Customer_Rating?` |
-| Trend | `What is the sales trend over time?` |
-| Anomalies | `Are there any unusual sales values?` |
-| Forecast | `Forecast monthly sales for the next 3 months.` |
-| Summary | `Give me an executive summary of the dataset.` |
-| Recommendations | `What actions should I take based on the forecast?` |
-
----
-
-## 🔄 Example Workflow
-
-**Query:** `Show sales by region`
-
-**Generated operation:**
-```text
-GROUP BY Region
-SUM(Sales)
-```
-
-**Result:**
-```text
-Region    Sales
------------------
-South     ...
-West      ...
-North     ...
-East      ...
-```
-
-The result is then visualized automatically and explained using the computed values only.
+| Category                  | Details                                                                    |
+| ------------------------- | -------------------------------------------------------------------------- |
+| **Descriptive Analytics** | Sum, average, minimum, maximum, count, grouped aggregation                 |
+| **Correlation**           | Pearson correlation, direction, strength, and rows analyzed                |
+| **Trend Analysis**        | Time-based aggregation and trend direction                                 |
+| **Anomaly Detection**     | IQR-based outlier detection                                                |
+| **Forecasting**           | Historical values, forecast values, prediction intervals, forecast horizon |
+| **Forecast Evaluation**   | MAE, RMSE, MAPE                                                            |
+| **Executive Summary**     | Dataset-level summary based on computed evidence                           |
+| **Recommendations**       | Evidence-based actions from trends, forecasts, and findings                |
 
 ---
 
-## 🔬 Reliability Approach
+## 🔬 Reliability Architecture
 
-> **AI decides what analysis to perform. Deterministic computation produces the result.**
+QueryLens follows a controlled analytical pipeline:
 
 ```text
-AI reasoning + Structured planning + Validation
-        + Deterministic computation + Grounded explanation
+AI Reasoning
+     ↓
+Structured SVG Planning
+     ↓
+Plan Validation
+     ↓
+Deterministic Computation
+     ↓
+Verified Result
+     ↓
+Grounded Explanation
 ```
 
-This reduces calculation hallucinations, unsupported conclusions, incorrect aggregation and invalid operations. AI-generated output is never treated as final analytical truth.
+This helps reduce:
+
+* Calculation hallucinations
+* Unsupported conclusions
+* Incorrect aggregation
+* Invalid operations
+* Unverified AI-generated results
+
+**AI output is not treated as the final analytical truth.**
 
 ---
 
-## 🌐 Cross-Domain Use
+## 🌐 Domain Independence
 
-The architecture is domain-independent. For example, a medical dataset with `Patient_ID`, `Age`, `Temperature_F`, `SpO2_Percent`, `Heart_Rate_BPM` supports queries like:
+QueryLens is designed to work across different types of tabular datasets rather than being restricted to a single domain.
+
+For example, the same architecture can analyze:
+
+* 📈 Business and sales data
+* 🏥 Medical datasets
+* 📦 Inventory data
+* 👥 Customer data
+* 📊 Other structured datasets
+
+A medical dataset could support analytical queries such as:
 
 ```text
 Which patients have high temperature and low SpO2?
+```
+
+or:
+
+```text
 What is the correlation between Temperature_F and Heart_Rate_BPM?
 ```
 
-> ⚠️ Medical use cases are for analytical/decision-support demonstrations only, **not** for autonomous diagnosis or treatment.
+> ⚠️ Medical functionality is intended for analytical and decision-support demonstrations only. It is not intended for autonomous diagnosis or treatment.
+
+---
+
+## 💡 Example Queries
+
+### Sales
+
+```text
+Show sales by region.
+```
+
+```text
+What is the correlation between Sales and Customer_Rating?
+```
+
+```text
+What is the sales trend over time?
+```
+
+```text
+Forecast monthly sales for the next 3 months.
+```
+
+### Data Quality
+
+```text
+Are there any unusual sales values?
+```
+
+### Business Intelligence
+
+```text
+Give me an executive summary of the dataset.
+```
+
+```text
+What actions should I take based on the forecast?
+```
+
+---
+
+## 🧠 Why QueryLens?
+
+Traditional data analysis often requires users to combine:
+
+```text
+SQL
++
+Data Processing
++
+Statistics
++
+Visualization
++
+Data Interpretation
+```
+
+QueryLens brings these steps together behind a natural-language interface while keeping the actual analytical execution **structured and verifiable**.
+
+The goal is not simply to generate an AI answer.
+
+The goal is to turn:
+
+> **"Ask a question about your data."**
+
+into:
+
+> **"Generate → Validate → Compute → Visualize → Explain."**
 
 ---
 
 ## 🛠️ Tech Stack
 
-- AI / Large Language Model
-- Structured SVG analytical planning
-- Deterministic data processing
-- Statistical analysis & time-series forecasting
-- Data visualization
-
-> _TODO: list the exact frontend, backend and library names used in this repository._
+* **AI / Large Language Model**
+* **Structured SVG analytical planning**
+* **Deterministic data processing**
+* **Statistical analysis**
+* **Time-series forecasting**
+* **Data visualization**
+* **Natural-language query processing**
 
 ---
 
@@ -180,16 +202,13 @@ What is the correlation between Temperature_F and Heart_Rate_BPM?
 
 ```bash
 git clone https://github.com/sindhujasankaramoorthy/QueryLens.git
+
 cd QueryLens
 ```
 
-Then:
+Install the required frontend and backend dependencies, configure the required environment variables, and start the application.
 
-1. Install dependencies for the frontend and backend.
-2. Configure the required environment variables.
-3. Start the application using the project's development commands.
-
-> _TODO: add exact install/run commands and a `.env` example._
+> Refer to the project configuration for the required environment variables and startup commands.
 
 ---
 
@@ -202,25 +221,3 @@ QueryLens/
 ├── README.md
 └── ...
 ```
-
-> _TODO: update to match the final repository structure._
-
----
-
-## 🔮 Future Scope
-
-- Additional statistical techniques and forecasting models
-- Automated dataset quality recommendations
-- Domain-specific analytical modules
-- Multi-dataset analysis
-- Role-based access
-- Exportable analytical reports
-- More visualization types
-- Conversational follow-up questions
-- Production deployment
-
----
-
-## 🎯 Vision
-
-QueryLens aims to make data analysis as simple as asking a question: **"What is happening in my data?"**
