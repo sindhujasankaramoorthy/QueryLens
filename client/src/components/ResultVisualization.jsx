@@ -903,8 +903,11 @@ export default function ResultVisualization({ execution, validation, question, t
             {/* Top Driver Contributors Sub-card */}
             {Array.isArray(metadata.topContributors) && metadata.topContributors.length > 0 && (
               <div style={{ marginTop: '0.9rem', padding: '0.85rem 1rem', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.22)', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#ec4899', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Key Contributing Drivers (Largest Impact Sub-Groups):
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ec4899', marginBottom: '0.2rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Top Contributors by Dimension
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem', fontStyle: 'italic' }}>
+                  Contributors are analyzed separately within each dimension and should not be added across dimensions.
                 </div>
                 <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.82rem' }}>
                   {metadata.topContributors.map((tc, i) => (
@@ -912,7 +915,7 @@ export default function ResultVisualization({ execution, validation, question, t
                       <span style={{ color: 'var(--text-muted)' }}>{tc.dimension}: </span>
                       <strong style={{ color: 'var(--text-main)' }}>{tc.group}</strong>
                       <span style={{ color: tc.absoluteChange >= 0 ? 'var(--accent-emerald)' : 'var(--accent-rose)', fontFamily: 'var(--font-mono)', marginLeft: '0.35rem', fontWeight: 700 }}>
-                        {tc.absoluteChange >= 0 ? '+' : ''}{formatValue(tc.absoluteChange)} ({tc.contributionPercent >= 0 ? '+' : ''}{tc.contributionPercent}% of total)
+                        {tc.absoluteChange >= 0 ? '+' : ''}{formatValue(tc.absoluteChange)} ({tc.contributionPercent >= 0 ? '+' : ''}{tc.contributionPercent}% of net change)
                       </span>
                     </div>
                   ))}
@@ -927,7 +930,7 @@ export default function ResultVisualization({ execution, validation, question, t
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <BarChart3 size={20} style={{ color: '#ec4899' }} />
                 <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                  Group-Wise Absolute Change by Dimension
+                  Top Contributors by Dimension
                 </h4>
               </div>
               <span className="type-tag">Baseline ({metadata.comparisonPeriod || 'Previous'}) vs Target ({metadata.targetPeriod || 'Current'})</span>
@@ -959,11 +962,14 @@ export default function ResultVisualization({ execution, validation, question, t
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '0.35rem' }}>
+              Note: Contributors are analyzed separately within each dimension and should not be added across dimensions.
+            </div>
           </div>
 
           {/* Group Contribution Breakdown Table */}
           {(() => {
-            const tableColumns = Array.from(new Set(resultData.flatMap(r => Object.keys(r))));
+            const tableColumns = Array.from(new Set(resultData.flatMap(r => Object.keys(r)))).map(c => c === 'Contribution to Total Change (%)' ? 'Contribution to Net Change (%)' : c);
             return (
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -983,7 +989,7 @@ export default function ResultVisualization({ execution, validation, question, t
                     <thead>
                       <tr>
                         {tableColumns.map(key => (
-                          <th key={key} style={{ textAlign: typeof resultData[0]?.[key] === 'number' ? 'right' : 'left' }}>{formatLabel(key)}</th>
+                          <th key={key} style={{ textAlign: typeof resultData[0]?.[key] === 'number' || key.includes('(%)') || key.includes('Value') || key.includes('Change') ? 'right' : 'left' }}>{formatLabel(key)}</th>
                         ))}
                       </tr>
                     </thead>
@@ -991,7 +997,8 @@ export default function ResultVisualization({ execution, validation, question, t
                       {resultData.map((row, idx) => (
                         <tr key={idx}>
                           {tableColumns.map((key, cIdx) => {
-                            const rawVal = row[key];
+                            const rawKey = key === 'Contribution to Net Change (%)' ? 'Contribution to Total Change (%)' : key;
+                            const rawVal = row[rawKey];
                             return (
                               <td
                                 key={cIdx}
@@ -999,7 +1006,7 @@ export default function ResultVisualization({ execution, validation, question, t
                                   textAlign: typeof rawVal === 'number' ? 'right' : 'left',
                                   fontFamily: typeof rawVal === 'number' ? 'var(--font-mono)' : 'inherit',
                                   fontWeight: typeof rawVal === 'number' ? 700 : 500,
-                                  color: key === 'Absolute Change' ? (rawVal < 0 ? 'var(--accent-rose)' : 'var(--accent-emerald)') : cIdx === 0 ? 'var(--text-main)' : 'inherit'
+                                  color: rawKey === 'Absolute Change' ? (rawVal < 0 ? 'var(--accent-rose)' : 'var(--accent-emerald)') : cIdx === 0 ? 'var(--text-main)' : 'inherit'
                                 }}
                               >
                                 {formatValue(rawVal)}
@@ -1010,6 +1017,9 @@ export default function ResultVisualization({ execution, validation, question, t
                       ))}
                     </tbody>
                   </table>
+                </div>
+                <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '0.4rem' }}>
+                  Note: Contribution to Net Change values above 100% can occur when positive changes in other groups partially offset a larger negative change.
                 </div>
 
                 {/* Supporting Evidence Sub-card */}
