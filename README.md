@@ -21,7 +21,6 @@ QueryLens is an AI-powered analytics platform that turns natural-language questi
 - [Installation](#-installation)
 - [Project Structure](#-project-structure)
 - [Future Scope](#-future-scope)
-- [Author](#-author)
 
 ---
 
