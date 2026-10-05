@@ -216,11 +216,29 @@ router.post('/suggested-questions', (req, res) => {
       return res.status(400).json({ error: 'Columns schema is required.' });
     }
 
-    const numericCols = columns.filter(c => c.type === 'integer' || c.type === 'float');
-    const catCols = columns.filter(c => c.type === 'categorical' || c.type === 'text');
+    const isIdCol = (c) => c.semanticType === 'identifier' || (c.name && (
+      c.name.toLowerCase() === 'id' ||
+      c.name.toLowerCase().endsWith('_id') ||
+      c.name.toLowerCase().endsWith('-id') ||
+      c.name.toLowerCase().startsWith('id_') ||
+      c.name.toLowerCase().includes('order_id') ||
+      c.name.toLowerCase().includes('customer_id') ||
+      c.name.toLowerCase().includes('user_id') ||
+      c.name.toLowerCase().includes('product_id') ||
+      c.name.toLowerCase().includes('code') ||
+      c.name === '#'
+    ));
+
+    const numericCols = columns.filter(c => (c.type === 'integer' || c.type === 'float') && !isIdCol(c));
+    const idCols = columns.filter(c => isIdCol(c));
+    const catCols = columns.filter(c => (c.type === 'categorical' || c.type === 'text') && !isIdCol(c));
     const dateCols = columns.filter(c => c.type === 'date' || c.type === 'datetime');
 
     const suggestions = [];
+
+    if (idCols.length > 0) {
+      suggestions.push(`How many unique ${idCols[0].name} entries are there?`);
+    }
 
     if (catCols.length > 0 && numericCols.length > 0) {
       suggestions.push(`Which ${catCols[0].name} has the highest total ${numericCols[0].name}?`);

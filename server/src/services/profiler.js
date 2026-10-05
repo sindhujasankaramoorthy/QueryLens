@@ -231,6 +231,62 @@ function detectDuplicates(rows, columns) {
   };
 }
 
+function isIdentifierColumn(colName, inferredType, uniqueCount, validCount) {
+  if (!colName) return false;
+  const name = String(colName).trim().toLowerCase();
+
+  const idPattern = /^(.+[\_\-\s])?(id|identifier|code|key|sku|uuid|guid|seq|number|num|#)$/i;
+  const directMatch = (
+    name === 'id' ||
+    name === 'code' ||
+    name === 'key' ||
+    name === 'sku' ||
+    name === 'uuid' ||
+    name === 'guid' ||
+    name === '#' ||
+    name.endsWith('_id') ||
+    name.endsWith('-id') ||
+    name.endsWith(' id') ||
+    name.startsWith('id_') ||
+    name.startsWith('id-') ||
+    name.includes('order_id') ||
+    name.includes('customer_id') ||
+    name.includes('user_id') ||
+    name.includes('product_id') ||
+    name.includes('transaction_id') ||
+    name.includes('account_id') ||
+    name.includes('invoice_id') ||
+    idPattern.test(name)
+  );
+
+  if (directMatch) {
+    return true;
+  }
+
+  // High-cardinality integer columns with mostly unique values should also be candidates for identifier classification.
+  if (inferredType === 'integer' && validCount >= 10) {
+    const uniqueRatio = uniqueCount / validCount;
+    if (uniqueRatio >= 0.85) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function inferSemanticType(colName, inferredType, uniqueCount, validCount) {
+  if (isIdentifierColumn(colName, inferredType, uniqueCount, validCount)) {
+    return 'identifier';
+  }
+  if (inferredType === 'date' || inferredType === 'datetime') {
+    return 'datetime';
+  }
+  if (inferredType === 'integer' || inferredType === 'float') {
+    return 'measure';
+  }
+  return 'categorical';
+}
+
 function profileDataset(parsedData) {
   let fileName = 'dataset.csv';
   let fileSize = 0;
@@ -293,9 +349,26 @@ function profileDataset(parsedData) {
     const uniqueCount = uniqueValuesSet.size;
 
     const { type, mixed, dateAmbiguous } = inferColumnType(validValues);
+    const semanticType = inferSemanticType(colName, type, uniqueCount, validValues.length);
 
     let statistics = null;
-    if (type === 'integer' || type === 'float') {
+    let identifierStats = null;
+
+    if (semanticType === 'identifier') {
+      statistics = null;
+      const duplicateCount = validValues.length - uniqueCount;
+      const uniquenessPercentage = validValues.length > 0 ? Number(((uniqueCount / validValues.length) * 100).toFixed(2)) : 0;
+      identifierStats = {
+        storageType: type,
+        semanticType: 'identifier',
+        missingCount,
+        missingPercentage: Number((missingPercentage * 100).toFixed(2)),
+        uniqueCount,
+        duplicateCount,
+        uniquenessPercentage,
+        isUnique: uniqueCount === validValues.length && validValues.length > 0
+      };
+    } else if (type === 'integer' || type === 'float') {
       statistics = calculateNumericalStats(validNumbers);
     }
 
@@ -306,12 +379,15 @@ function profileDataset(parsedData) {
     columnProfiles.push({
       name: colName,
       type,
+      dataType: (type === 'integer' || type === 'float') ? (type === 'integer' ? 'integer' : 'numeric') : type,
+      semanticType,
       missingCount,
       missingPercentage,
       uniqueCount,
       sampleValues,
       statistics,
-      categorical
+      categorical,
+      identifierStats
     });
 
     // Generate warnings per column
@@ -394,6 +470,8 @@ module.exports = {
   profileDataset,
   isMissingValue,
   inferColumnType,
+  isIdentifierColumn,
+  inferSemanticType,
   calculateNumericalStats,
   calculateCategoricalStats,
   detectDuplicates

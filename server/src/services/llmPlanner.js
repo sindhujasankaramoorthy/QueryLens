@@ -11,7 +11,7 @@ const { validateAnalysisPlan } = require('./planValidator');
  * Builds system prompt with dataset schema metadata and optional conversation context.
  */
 function buildSystemPrompt(schemaColumns, context = null) {
-  const schemaDesc = (schemaColumns || []).map(col => `- ${col.name} (type: ${col.type})`).join('\n');
+  const schemaDesc = (schemaColumns || []).map(col => `- ${col.name} (dataType: ${col.dataType || col.type}, semanticType: ${col.semanticType || 'measure'})`).join('\n');
   const contextDesc = context ? `\nPREVIOUS CONTEXT:\n- Previous Question: "${context.previousQuestion || ''}"\n- Previous Plan: ${JSON.stringify(context.previousPlan || {})}` : '';
 
   return `You are PSA01, a schema-aware AI data planning system.
@@ -25,11 +25,12 @@ CRITICAL RULES:
 5. If the question asks for correlation, relationship, or association between two numeric columns (e.g., "Is sales related to quantity?", "What is the correlation between sales and quantity?"), set operation to "correlation" and measures to an array of the two numeric column names, e.g. ["Sales", "Quantity"].
 6. If the question asks for results grouped or broken down by time or date (e.g., "by month", "monthly", "by year", "yearly", "trend", "over time", "by date", "per month", "by quarter"), you MUST return operation: "time_group". Set column to the date/datetime column name, measure to the target numerical measure column (e.g. Sales, Revenue), timeUnit to "month", "year", "day", or "quarter", and aggregation to the requested aggregation function (default "sum").
 7. If the user asks a conversational follow-up question (e.g. "which region contributed the most?", "what about quantity instead?", "show that by month", "now show top 3"), use the previous context to inherit columns/measures where appropriate, but ALWAYS output a structured JSON plan for Phase 3 engine to execute. If the new question asks for a full breakdown by a dimension (e.g., "show total sales by region"), set operation to "group_aggregate" and limit to null (DO NOT inherit previous top-N limits).
-8. If the question cannot be answered because required columns do not exist or non-numeric columns are specified for correlation, return:
+8. IDENTIFIER RULES: Columns with semanticType "identifier" (such as Order_ID, Customer_ID, etc.) are identifier keys, NOT numerical measures. DO NOT allow sum, average, median, min, max, correlation, forecasting, or group-aggregation on identifier columns. Only count, distinct count, or uniqueness operations are permitted on identifiers. If a user asks for average/sum/correlation on an identifier (e.g. "What is the average Order_ID?"), return status: "cannot_answer".
+9. If the question cannot be answered because required columns do not exist, non-numeric columns are specified for correlation, or a measure operation is requested on an identifier column, return:
    {"status": "cannot_answer", "reason": "Detailed explanation why schema cannot answer this."}
-9. If the question is ambiguous, return:
+10. If the question is ambiguous, return:
    {"status": "clarification_required", "question": "Clarification question asking user to specify."}
-9. Otherwise, return:
+11. Otherwise, return:
    {
      "status": "success",
      "plan": {
@@ -137,28 +138,43 @@ function normalizeText(text) {
     .trim();
 }
 
-function findColumnInQuery(columns, question) {
+function findColumnInQueryDetails(columns, question) {
   const normQ = normalizeText(question);
-  if (!normQ || !columns || columns.length === 0) return null;
+  if (!normQ || !columns || columns.length === 0) return { col: null, score: 0 };
 
   const scoredCols = columns.map(c => {
     const normCol = normalizeText(c.name);
     if (!normCol) return { col: c, score: 0, len: 0 };
 
     if (normQ.includes(normCol)) {
-      return { col: c, score: 3, len: normCol.length };
+      return { col: c, score: 4, len: normCol.length };
     }
 
     const colWords = normCol.split(' ').filter(w => w.length > 1);
     if (colWords.length > 1) {
-      const allWordsPresent = colWords.every(w => new RegExp(`\\b${w}\\b`, 'i').test(normQ));
+      const allWordsPresent = colWords.every(w => {
+        const stem = w.endsWith('s') ? w.slice(0, -1) : w;
+        return new RegExp(`\\b${w}\\b|\\b${stem}\\b|\\b${stem}s\\b`, 'i').test(normQ);
+      });
       if (allWordsPresent) {
+        return { col: c, score: 3, len: normCol.length };
+      }
+    }
+
+    const keyWords = colWords.filter(w => w !== 'id');
+    if (keyWords.length > 0) {
+      const anyKeyWordPresent = keyWords.some(w => {
+        const stem = w.endsWith('s') ? w.slice(0, -1) : w;
+        return new RegExp(`\\b${w}\\b|\\b${stem}\\b|\\b${stem}s\\b`, 'i').test(normQ);
+      });
+      if (anyKeyWordPresent) {
         return { col: c, score: 2, len: normCol.length };
       }
     }
 
     if (!normCol.includes(' ')) {
-      if (new RegExp(`\\b${normCol}\\b`, 'i').test(normQ)) {
+      const stem = normCol.endsWith('s') ? normCol.slice(0, -1) : normCol;
+      if (new RegExp(`\\b${normCol}\\b|\\b${stem}\\b|\\b${stem}s\\b`, 'i').test(normQ)) {
         return { col: c, score: 1, len: normCol.length };
       }
     }
@@ -167,10 +183,14 @@ function findColumnInQuery(columns, question) {
   });
 
   const matches = scoredCols.filter(x => x.score > 0);
-  if (matches.length === 0) return null;
+  if (matches.length === 0) return { col: null, score: 0 };
 
   matches.sort((a, b) => b.score - a.score || b.len - a.len);
-  return matches[0].col;
+  return matches[0];
+}
+
+function findColumnInQuery(columns, question) {
+  return findColumnInQueryDetails(columns, question).col;
 }
 
 function heuristicFallbackPlanner(question, schemaColumns, context = null) {
@@ -182,18 +202,49 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
   const prevGroupBy = prevPlan?.groupBy || null;
   const prevLimit = prevPlan?.limit || null;
 
-  const numericCols = schemaColumns.filter(c => c.type === 'integer' || c.type === 'float');
-  const catCols = schemaColumns.filter(c => c.type === 'categorical' || c.type === 'text');
+  const isIdentifier = (c) => c.semanticType === 'identifier' || isIdColumn(c.name);
+
+  const idCols = schemaColumns.filter(c => isIdentifier(c));
+  const numericCols = schemaColumns.filter(c => (c.type === 'integer' || c.type === 'float') && !isIdentifier(c));
+  const catCols = schemaColumns.filter(c => (c.type === 'categorical' || c.type === 'text') && !isIdentifier(c));
   const dateCols = schemaColumns.filter(c => 
     c.type === 'date' || 
     c.type === 'datetime' || 
     ['date', 'time', 'month', 'year', 'day', 'timestamp', 'created_at', 'order_date'].some(k => c.name.toLowerCase().includes(k))
   );
 
-  // Match columns in question
-  const matchedNumeric = findColumnInQuery(numericCols, question);
-  const matchedCat = findColumnInQuery(catCols, question);
-  const matchedDate = findColumnInQuery(dateCols, question);
+  // Match columns in question with scores
+  const idMatch = findColumnInQueryDetails(idCols, question);
+  const numMatch = findColumnInQueryDetails(numericCols, question);
+  const catMatch = findColumnInQueryDetails(catCols, question);
+  const dateMatch = findColumnInQueryDetails(dateCols, question);
+
+  const maxNonIdScore = Math.max(numMatch.score, catMatch.score, dateMatch.score);
+  const matchedId = idMatch.score > 0 && (idMatch.score >= maxNonIdScore || q.includes('order_id') || q.includes('customer_id') || q.includes('user_id') || q.includes(' id') || q.includes('order id')) ? idMatch.col : null;
+
+  const matchedNumeric = numMatch.col;
+  const matchedCat = catMatch.col;
+  const matchedDate = dateMatch.col;
+
+  // Handle explicit queries on identifier columns (e.g. Order_ID)
+  if (matchedId) {
+    const isCountQuery = q.includes('how many') || q.includes('count') || q.includes('unique') || q.includes('number of');
+    if (isCountQuery) {
+      return {
+        status: 'success',
+        plan: {
+          operation: 'count',
+          measure: matchedId.name,
+          column: matchedId.name
+        }
+      };
+    } else {
+      return {
+        status: 'cannot_answer',
+        reason: `Column '${matchedId.name}' is an identifier column, not an analytical numerical measure.`
+      };
+    }
+  }
 
   // Active measure and dimension resolution
   const activeMeasure = matchedNumeric ? matchedNumeric.name : (prevMeasure || getPrimaryMeasureColumn(numericCols));

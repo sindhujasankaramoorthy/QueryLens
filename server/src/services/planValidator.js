@@ -142,12 +142,33 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
   // Build schema map for fast lookup & canonical column name resolution
   const schemaMap = new Map();
   const canonicalMap = new Map();
+  const semanticMap = new Map();
 
   (schemaColumns || []).forEach(col => {
+    let semType = col.semanticType;
+    if (!semType) {
+      const name = String(col.name).toLowerCase();
+      if (name === 'id' || name.endsWith('_id') || name.startsWith('id_') || name.includes('identifier') || name.includes('code') || name === '#') {
+        semType = 'identifier';
+      } else if (col.type === 'date' || col.type === 'datetime') {
+        semType = 'datetime';
+      } else if (col.type === 'integer' || col.type === 'float') {
+        semType = 'measure';
+      } else {
+        semType = 'categorical';
+      }
+    }
+
     schemaMap.set(col.name, col.type);
     schemaMap.set(col.name.toLowerCase(), col.type);
+    semanticMap.set(col.name, semType);
+    semanticMap.set(col.name.toLowerCase(), semType);
+
     const norm = normalizeText(col.name);
-    if (norm) schemaMap.set(norm, col.type);
+    if (norm) {
+      schemaMap.set(norm, col.type);
+      semanticMap.set(norm, semType);
+    }
 
     canonicalMap.set(col.name, col.name);
     canonicalMap.set(col.name.toLowerCase(), col.name);
@@ -157,6 +178,11 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
   const getColType = (name) => {
     if (!name) return null;
     return schemaMap.get(name) || schemaMap.get(name.toLowerCase()) || schemaMap.get(normalizeText(name)) || null;
+  };
+
+  const getColSemanticType = (name) => {
+    if (!name) return null;
+    return semanticMap.get(name) || semanticMap.get(name.toLowerCase()) || semanticMap.get(normalizeText(name)) || null;
   };
 
   const getCanonicalColName = (name) => {
@@ -199,7 +225,7 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
     }
   }
 
-  // 2. Data Type Compatibility Checks
+  // 2. Data Type & Semantic Compatibility Checks
   const targetMeasure = plan.measure || (plan.operation !== 'group_aggregate' ? plan.column : null);
   const agg = (plan.aggregation || '').toLowerCase().trim();
 
@@ -210,6 +236,19 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
       plan: null,
       reason: `Unsupported aggregation function '${plan.aggregation}'. Allowed aggregations: ${Array.from(SUPPORTED_AGGREGATIONS).join(', ')}.`
     };
+  }
+
+  // Identifier restrictions check: Identifier columns cannot be used as analytical measures for SUM, AVG, MIN, MAX, median, group aggregation, or correlation.
+  if (targetMeasure && getColSemanticType(targetMeasure) === 'identifier') {
+    const isCountAgg = agg === 'count' || operation === 'count';
+    if (!isCountAgg) {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: `Column '${getCanonicalColName(targetMeasure)}' is an identifier column, not an analytical numerical measure.`
+      };
+    }
   }
 
   // Numerical aggregations (sum, average, median, min, max) require numeric column
@@ -266,6 +305,14 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
           status: 'cannot_answer',
           plan: null,
           reason: `Column '${m}' does not exist in the dataset schema.`
+        };
+      }
+      if (getColSemanticType(m) === 'identifier') {
+        return {
+          isValid: true,
+          status: 'cannot_answer',
+          plan: null,
+          reason: `Correlation analysis cannot be performed on identifier column '${getCanonicalColName(m)}'.`
         };
       }
       if (!isNumericType(type)) {

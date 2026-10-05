@@ -213,8 +213,22 @@ function generateDatasetInsights(rows, columns) {
     }
 
     // C. NUMERICAL OUTLIER ANALYSIS (IQR METHOD)
+    const isIdentifierCol = (
+      (typeof col === 'object' && col?.semanticType === 'identifier') ||
+      colName.toLowerCase() === 'id' ||
+      colName.toLowerCase().endsWith('_id') ||
+      colName.toLowerCase().endsWith('-id') ||
+      colName.toLowerCase().startsWith('id_') ||
+      colName.toLowerCase().includes('order_id') ||
+      colName.toLowerCase().includes('customer_id') ||
+      colName.toLowerCase().includes('user_id') ||
+      colName.toLowerCase().includes('product_id') ||
+      colName.toLowerCase().includes('code') ||
+      colName === '#'
+    );
+
     const numericPercentage = validNumbers.length / Math.max(1, validValues.length);
-    if (numericPercentage >= 0.8 && validNumbers.length >= 4) {
+    if (!isIdentifierCol && numericPercentage >= 0.8 && validNumbers.length >= 4) {
       const iqrStats = calculateIQRStats(validNumbers);
 
       if (iqrStats && iqrStats.outlierCount > 0) {
