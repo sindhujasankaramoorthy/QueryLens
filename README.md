@@ -1,5 +1,7 @@
 # 🔍 QueryLens
 
+[![CI/CD Pipeline - Test & Build](https://github.com/sindhujasankaramoorthy/QueryLens/actions/workflows/ci.yml/badge.svg)](https://github.com/sindhujasankaramoorthy/QueryLens/actions/workflows/ci.yml)
+
 **Ask questions about your data in plain English — get validated, reproducible answers.**
 
 QueryLens is an AI-powered analytics platform that turns natural-language questions into a structured **SVG analytical plan**, validates it, executes it deterministically, and explains the result in plain language.
