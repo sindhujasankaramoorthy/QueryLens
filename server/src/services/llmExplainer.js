@@ -43,6 +43,7 @@ function extractEvidenceNumbers(evidence) {
   if (evidence?.metadata?.totalRecords !== undefined) numbers.add(String(evidence.metadata.totalRecords));
   if (evidence?.metadata?.rowsExcluded !== undefined) numbers.add(String(evidence.metadata.rowsExcluded));
   if (evidence?.metadata?.horizon !== undefined) numbers.add(String(evidence.metadata.horizon));
+  if (evidence?.metadata?.historicalPeriods !== undefined) numbers.add(String(evidence.metadata.historicalPeriods));
   if (evidence?.metadata?.latestHistoricalValue !== undefined) numbers.add(String(evidence.metadata.latestHistoricalValue));
   if (evidence?.metadata?.firstForecastValue !== undefined) numbers.add(String(evidence.metadata.firstForecastValue));
   if (evidence?.metadata?.finalForecastValue !== undefined) numbers.add(String(evidence.metadata.finalForecastValue));
@@ -56,6 +57,8 @@ function extractEvidenceNumbers(evidence) {
     if (bm.rmse !== undefined) numbers.add(String(bm.rmse));
     if (bm.mape !== undefined && bm.mape !== null) numbers.add(String(bm.mape));
     if (bm.validationPeriods !== undefined) numbers.add(String(bm.validationPeriods));
+    if (bm.trainingPeriods !== undefined) numbers.add(String(bm.trainingPeriods));
+    if (bm.zeroActualsExcluded !== undefined) numbers.add(String(bm.zeroActualsExcluded));
   }
 
   if (Array.isArray(evidence?.result)) {
@@ -74,6 +77,10 @@ function extractEvidenceNumbers(evidence) {
             numbers.add(val.toFixed(4));
             numbers.add(Math.abs(val).toFixed(2));
           }
+        } else if (typeof val === 'string') {
+          // Extract year numbers or numbers inside strings like dates or '2026-10'
+          const numMatches = val.match(/\d+/g);
+          if (numMatches) numMatches.forEach(n => numbers.add(n));
         }
       });
     });
@@ -159,18 +166,23 @@ function generateDeterministicExplanation(evidence) {
     const horizon = metadata.horizon || 3;
     const gran = (metadata.granularity || 'month').toLowerCase();
     const method = metadata.method || 'Linear Regression';
-    const latestHist = metadata.latestHistoricalValue !== undefined ? metadata.latestHistoricalValue : 'N/A';
-    const finalFc = metadata.finalForecastValue !== undefined ? metadata.finalForecastValue : 'N/A';
+    const histCount = metadata.historicalPeriods || metadata.rowsAnalyzed || 'multiple';
+    const latestHist = metadata.latestHistoricalValue !== undefined ? formatNumberUS(metadata.latestHistoricalValue) : 'N/A';
+    const latestPeriod = metadata.latestHistoricalPeriod ? ` (${metadata.latestHistoricalPeriod})` : '';
+    const firstFc = metadata.firstForecastValue !== undefined ? formatNumberUS(metadata.firstForecastValue) : 'N/A';
+    const firstPeriod = metadata.firstForecastPeriod ? ` (${metadata.firstForecastPeriod})` : '';
+    const finalFc = metadata.finalForecastValue !== undefined ? formatNumberUS(metadata.finalForecastValue) : 'N/A';
+    const finalPeriod = metadata.finalForecastPeriod ? ` (${metadata.finalForecastPeriod})` : '';
     const change = metadata.overallChangePercent !== undefined ? metadata.overallChangePercent : 0;
-    const directionStr = change >= 0 ? `projected to increase by ${change}%` : `projected to decrease by ${Math.abs(change)}%`;
+    const directionWord = change >= 0 ? 'increase' : 'decrease';
 
-    let exp = `Based on historical time-index ${method} over ${metadata.rowsAnalyzed || 'multiple'} ${gran}ly periods, ${target} is ${directionStr} over the next ${horizon} ${gran}s (from ${latestHist} in the latest historical period to ${finalFc} by the final forecast period).`;
+    let exp = `Based on the historical ${gran}ly ${target} pattern across ${histCount} chronological periods, the Linear Regression model projects ${target} to ${directionWord} over the next ${horizon} ${gran}s. The latest historical period${latestPeriod} recorded ${target} of ${latestHist}. The model projects ${target} to be ${firstFc} in period 1${firstPeriod} and reach ${finalFc} by final period ${horizon}${finalPeriod}, representing a projected change of ${change >= 0 ? '+' : ''}${change}% to the final forecast period.`;
 
     if (metadata.backtestMetrics) {
       const bm = metadata.backtestMetrics;
-      exp += ` Historical backtesting over ${bm.validationPeriods} holdout period(s) yielded MAE of ${bm.mae}${bm.rmse !== undefined ? `, RMSE of ${bm.rmse}` : ''}${bm.mape !== null ? `, and MAPE of ${bm.mape}%` : ''}.`;
+      exp += ` Model validation over ${bm.validationPeriods} chronological holdout period(s) (with ${bm.trainingPeriods} training periods) yielded an MAE of ${formatNumberUS(bm.mae)}, RMSE of ${formatNumberUS(bm.rmse)}, and MAPE of ${bm.mape !== null ? `${bm.mape}%` : 'N/A'} (${bm.zeroActualsExcluded || 0} zero-actual observations excluded).`;
     } else {
-      exp += ` Insufficient historical periods were available for backtest validation.`;
+      exp += ` Insufficient historical periods were available for reliable backtest validation.`;
     }
 
     exp += ` Note: Linear regression projects historical trends forward assuming past patterns continue; it does not guarantee future results.`;

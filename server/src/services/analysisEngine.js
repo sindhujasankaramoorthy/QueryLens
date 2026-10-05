@@ -1432,6 +1432,7 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
           }
         }
 
+        const zeroActualsExcluded = K - validMapeCount;
         const mae = Number((absErrSum / K).toFixed(2));
         const rmse = Number((Math.sqrt(sqErrSum / K)).toFixed(2));
         const mape = validMapeCount > 0 ? Number((mapeErrSum / validMapeCount).toFixed(2)) : null;
@@ -1441,7 +1442,9 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
           rmse,
           mape,
           validationPeriods: K,
-          trainingPeriods: nTrain
+          trainingPeriods: nTrain,
+          validMapeCount,
+          zeroActualsExcluded
         };
       }
 
@@ -1451,7 +1454,9 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
         combinedResults.push({
           Period: p.dateKey,
           Type: 'Historical',
-          [targetCol]: p.value
+          [targetCol]: p.value,
+          'Lower Bound (95%)': '—',
+          'Upper Bound (95%)': '—'
         });
       });
 
@@ -1490,7 +1495,12 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
       }
 
       const latestHistoricalValue = yVals[N - 1];
+      const latestHistoricalPeriod = aggregatedPeriods[N - 1].dateKey;
       const finalForecastValue = forecastSeries[horizon - 1].forecast;
+      const finalForecastPeriod = forecastSeries[horizon - 1].period;
+      const firstForecastValue = forecastSeries[0].forecast;
+      const firstForecastPeriod = forecastSeries[0].period;
+
       const overallChangePercent = latestHistoricalValue > 0
         ? Number((((finalForecastValue - latestHistoricalValue) / latestHistoricalValue) * 100).toFixed(2))
         : 0;
@@ -1513,15 +1523,20 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
           confidenceLevel: 0.95,
           totalRecords: rows.length,
           rowsAnalyzed: N,
+          historicalPeriods: N,
           invalidDatesExcluded: invalidDatesCount,
           missingTargetExcluded: missingTargetCount,
+          latestHistoricalPeriod,
           latestHistoricalValue,
-          firstForecastValue: forecastSeries[0].forecast,
+          firstForecastPeriod,
+          firstForecastValue,
+          finalForecastPeriod,
           finalForecastValue,
           overallChangePercent,
           slope: Number(slope.toFixed(4)),
           intercept: Number(intercept.toFixed(4)),
-          backtestMetrics
+          backtestMetrics,
+          forecastSeries
         }
       };
     }

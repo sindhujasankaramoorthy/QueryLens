@@ -604,34 +604,46 @@ export default function ResultVisualization({ execution, validation, question, t
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <TrendingUp size={22} style={{ color: 'var(--accent-violet)' }} />
                 <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-violet)' }}>
-                  Time-Series Forecasting ({metadata.target || yKey} over {metadata.granularity || 'MONTH'})
+                  Time-Series Forecasting ({formatLabel(metadata.target || yKey)} over {metadata.granularity || 'MONTH'})
                 </span>
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-violet)', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
-                  Horizon: +{metadata.horizon || 3} {metadata.granularity || 'MONTH'}s
+                  Forecast Horizon: {metadata.horizon || 3} {metadata.granularity || 'MONTH'}s
                 </span>
                 <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: metadata.overallChangePercent >= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)', color: metadata.overallChangePercent >= 0 ? 'var(--accent-emerald)' : 'var(--accent-rose)', border: metadata.overallChangePercent >= 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(244, 63, 94, 0.3)' }}>
-                  Overall: {metadata.overallChangePercent >= 0 ? '+' : ''}{metadata.overallChangePercent}%
+                  Projected Change: {metadata.overallChangePercent >= 0 ? '+' : ''}{metadata.overallChangePercent}%
                 </span>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.85rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.85rem' }}>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 <div>Target Measure</div>
                 <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem' }}>{formatLabel(metadata.target || yKey)}</strong>
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                <div>Historical Periods</div>
-                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.rowsAnalyzed || resultData.filter(r => r.Type === 'Historical').length}</strong>
+                <div>Date Column</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem' }}>{metadata.dateColumn || xKey}</strong>
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                <div>Latest Historical</div>
+                <div>Historical Periods</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.historicalPeriods || metadata.rowsAnalyzed}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Latest Historical Period</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.latestHistoricalPeriod || '—'}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Latest Historical Sales</div>
                 <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.latestHistoricalValue)}</strong>
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                <div>Final Forecast</div>
+                <div>Final Forecast Period</div>
+                <strong style={{ color: 'var(--accent-violet)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.finalForecastPeriod || '—'}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Final Forecast Sales</div>
                 <strong style={{ color: 'var(--accent-violet)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.finalForecastValue)}</strong>
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
@@ -642,25 +654,29 @@ export default function ResultVisualization({ execution, validation, question, t
 
             {/* Validation / Backtest Metrics Sub-card */}
             {metadata.backtestMetrics ? (
-              <div style={{ marginTop: '0.85rem', padding: '0.65rem 0.85rem', borderRadius: '6px', background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--accent-cyan)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Validation / Backtest Metrics ({metadata.backtestMetrics.validationPeriods} Holdout Period{metadata.backtestMetrics.validationPeriods > 1 ? 's' : ''}):
+              <div style={{ marginTop: '0.9rem', padding: '0.85rem 1rem', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.22)', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Validation / Backtest Metrics ({metadata.backtestMetrics.validationPeriods} Holdout Period{metadata.backtestMetrics.validationPeriods > 1 ? 's' : ''})
+                  </span>
+                  <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    Training: {metadata.backtestMetrics.trainingPeriods} periods | Holdout: {metadata.backtestMetrics.validationPeriods} periods
+                  </span>
                 </div>
-                <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  <span>MAE: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{metadata.backtestMetrics.mae}</strong></span>
-                  <span>RMSE: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{metadata.backtestMetrics.rmse}</strong></span>
-                  {metadata.backtestMetrics.mape !== null && (
-                    <span>MAPE: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{metadata.backtestMetrics.mape}%</strong></span>
-                  )}
+                <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  <span>MAE: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.backtestMetrics.mae)}</strong></span>
+                  <span>RMSE: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.backtestMetrics.rmse)}</strong></span>
+                  <span>MAPE: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{metadata.backtestMetrics.mape !== null ? `${metadata.backtestMetrics.mape}%` : 'N/A'}</strong></span>
+                  <span>Zero-actual observations excluded: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{metadata.backtestMetrics.zeroActualsExcluded || 0}</strong></span>
                 </div>
-                <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.25rem', fontStyle: 'italic' }}>
-                  Note: Backtest metrics describe historical model predictive accuracy over holdout validation periods. They do not describe future certainty.
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.4rem', fontStyle: 'italic' }}>
+                  Note: Backtest metrics measure historical predictive performance on chronological holdout periods. They do not guarantee future forecast accuracy.
                 </div>
               </div>
             ) : (
-              <div style={{ marginTop: '0.85rem', padding: '0.5rem 0.75rem', borderRadius: '6px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', color: 'var(--accent-amber)', fontSize: '0.78rem' }}>
+              <div style={{ marginTop: '0.85rem', padding: '0.55rem 0.75rem', borderRadius: '6px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', color: 'var(--accent-amber)', fontSize: '0.78rem' }}>
                 <AlertTriangle size={15} style={{ display: 'inline', marginRight: '0.35rem' }} />
-                Insufficient historical periods for reliable backtesting.
+                Insufficient historical periods for reliable backtest validation.
               </div>
             )}
           </div>
@@ -746,75 +762,80 @@ export default function ResultVisualization({ execution, validation, question, t
             </div>
           </div>
 
-          {/* Combined Results Table */}
-          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Layers size={18} style={{ color: 'var(--primary)' }} />
-                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                  Forecast Results Table ({resultData.length} Periods)
-                </h4>
-              </div>
-              <span className="type-badge" style={{ background: 'var(--primary-glow)', color: 'var(--primary)', border: '1px solid var(--border-active)' }}>
-                Historical & Forecast Breakdown
-              </span>
-            </div>
+          {/* Combined Forecast Results Table */}
+          {(() => {
+            const tableColumns = Array.from(new Set(resultData.flatMap(r => Object.keys(r))));
+            return (
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Layers size={18} style={{ color: 'var(--primary)' }} />
+                    <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                      Forecast Results Table ({resultData.length} Periods)
+                    </h4>
+                  </div>
+                  <span className="type-badge" style={{ background: 'var(--primary-glow)', color: 'var(--primary)', border: '1px solid var(--border-active)' }}>
+                    Historical ({metadata.historicalPeriods || metadata.rowsAnalyzed}) & Forecast (+{metadata.horizon}) Breakdown
+                  </span>
+                </div>
 
-            <div className="table-wrapper">
-              <table className="profile-table">
-                <thead>
-                  <tr>
-                    {keys.map(key => (
-                      <th key={key} style={{ textAlign: typeof firstRow[key] === 'number' ? 'right' : 'left' }}>{formatLabel(key)}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {resultData.map((row, idx) => {
-                    const isForecastRow = row.Type === 'Forecast';
-                    return (
-                      <tr key={idx} style={{ background: isForecastRow ? (isDark ? 'rgba(168, 85, 247, 0.08)' : 'rgba(168, 85, 247, 0.05)') : 'transparent' }}>
-                        {keys.map((key, cIdx) => {
-                          const rawVal = row[key];
-                          const isTypeCol = key === 'Type';
-
-                          if (isTypeCol) {
-                            return (
-                              <td key={cIdx}>
-                                <span style={{ padding: '0.2rem 0.55rem', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, background: isForecastRow ? 'rgba(168, 85, 247, 0.2)' : 'rgba(16, 185, 129, 0.15)', color: isForecastRow ? 'var(--accent-violet)' : 'var(--accent-emerald)' }}>
-                                  {rawVal}
-                                </span>
-                              </td>
-                            );
-                          }
-
-                          return (
-                            <td
-                              key={cIdx}
-                              style={{
-                                textAlign: typeof rawVal === 'number' ? 'right' : 'left',
-                                fontFamily: typeof rawVal === 'number' ? 'var(--font-mono)' : 'inherit',
-                                fontWeight: typeof rawVal === 'number' || isForecastRow ? 700 : 500,
-                                color: isForecastRow && cIdx === 2 ? 'var(--accent-violet)' : cIdx === 0 ? 'var(--text-main)' : 'inherit'
-                              }}
-                            >
-                              {formatValue(rawVal)}
-                            </td>
-                          );
-                        })}
+                <div className="table-wrapper">
+                  <table className="profile-table">
+                    <thead>
+                      <tr>
+                        {tableColumns.map(key => (
+                          <th key={key} style={{ textAlign: typeof resultData[0]?.[key] === 'number' ? 'right' : 'left' }}>{formatLabel(key)}</th>
+                        ))}
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {resultData.map((row, idx) => {
+                        const isForecastRow = row.Type === 'Forecast';
+                        return (
+                          <tr key={idx} style={{ background: isForecastRow ? (isDark ? 'rgba(168, 85, 247, 0.08)' : 'rgba(168, 85, 247, 0.05)') : 'transparent' }}>
+                            {tableColumns.map((key, cIdx) => {
+                              const rawVal = row[key];
+                              const isTypeCol = key === 'Type';
 
-            <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1rem', fontSize: '0.78rem', color: 'var(--text-muted)', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
-              <span>Method: <strong style={{ color: 'var(--primary)' }}>Linear Time-Index Regression</strong></span>
-              <span>Confidence Bounds: <strong style={{ color: 'var(--text-main)' }}>95% Standard Prediction Band</strong></span>
-              <span>Calculation: <strong style={{ color: 'var(--accent-emerald)' }}>100% Deterministic & Grounded</strong></span>
-            </div>
-          </div>
+                              if (isTypeCol) {
+                                return (
+                                  <td key={cIdx}>
+                                    <span style={{ padding: '0.2rem 0.55rem', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, background: isForecastRow ? 'rgba(168, 85, 247, 0.2)' : 'rgba(16, 185, 129, 0.15)', color: isForecastRow ? 'var(--accent-violet)' : 'var(--accent-emerald)' }}>
+                                      {rawVal}
+                                    </span>
+                                  </td>
+                                );
+                              }
+
+                              return (
+                                <td
+                                  key={cIdx}
+                                  style={{
+                                    textAlign: typeof rawVal === 'number' ? 'right' : 'left',
+                                    fontFamily: typeof rawVal === 'number' ? 'var(--font-mono)' : 'inherit',
+                                    fontWeight: typeof rawVal === 'number' || isForecastRow ? 700 : 500,
+                                    color: isForecastRow && key === metadata.target ? 'var(--accent-violet)' : cIdx === 0 ? 'var(--text-main)' : 'inherit'
+                                  }}
+                                >
+                                  {formatValue(rawVal)}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1rem', fontSize: '0.78rem', color: 'var(--text-muted)', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
+                  <span>Method: <strong style={{ color: 'var(--primary)' }}>Linear Time-Index Regression</strong></span>
+                  <span>Confidence Bounds: <strong style={{ color: 'var(--text-main)' }}>95% Standard Prediction Band</strong></span>
+                  <span>Calculation: <strong style={{ color: 'var(--accent-emerald)' }}>100% Deterministic & Grounded</strong></span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
