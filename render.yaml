@@ -3,7 +3,7 @@ services:
     name: dataset-workbench
     env: node
     plan: free
-    buildCommand: npm run build
+    buildCommand: npm install && npm install --prefix client && npm install --prefix server && npm run build --prefix client
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
