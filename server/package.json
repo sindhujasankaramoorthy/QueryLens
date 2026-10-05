@@ -1,0 +1,26 @@
+{
+  "name": "psa01-server",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node tests/profiler.test.js && node tests/planner.test.js && node tests/engine.test.js && node tests/visualization.test.js && node tests/explanation.test.js && node tests/full_audit.test.js && node tests/insights.test.js && node tests/correlation.test.js",
+    "test:phase1": "node tests/profiler.test.js",
+    "test:phase2": "node tests/planner.test.js",
+    "test:phase3": "node tests/engine.test.js",
+    "test:phase4": "node tests/visualization.test.js",
+    "test:phase5": "node tests/explanation.test.js",
+    "test:phase6": "node tests/insights.test.js",
+    "test:phase7": "node tests/correlation.test.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "papaparse": "^5.4.1",
+    "xlsx": "^0.18.5"
+  }
+}
