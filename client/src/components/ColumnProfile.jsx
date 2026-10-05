@@ -34,9 +34,16 @@ export default function ColumnProfile({ columns }) {
                   {col.name}
                 </td>
                 <td>
-                  <span className={`type-badge type-${col.type}`}>
-                    {col.type}
-                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
+                    <span className={`type-badge type-${col.type}`}>
+                      {col.type}
+                    </span>
+                    {col.semanticType && (
+                      <span className={`type-badge type-${col.semanticType}`} style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em', background: col.semanticType === 'identifier' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.05)', color: col.semanticType === 'identifier' ? '#818cf8' : 'var(--text-muted)', border: col.semanticType === 'identifier' ? '1px solid rgba(99, 102, 241, 0.3)' : 'none' }}>
+                        {col.semanticType}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td>
                   <div style={{ fontWeight: 700 }}>
@@ -50,7 +57,16 @@ export default function ColumnProfile({ columns }) {
                   {col.uniqueCount.toLocaleString()}
                 </td>
                 <td>
-                  {col.statistics ? (
+                  {col.semanticType === 'identifier' || col.identifierStats ? (
+                    <div className="stats-list" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      <div>Storage type: <strong style={{ color: 'var(--text-main)' }}>{col.dataType || col.type}</strong></div>
+                      <div>Semantic type: <strong style={{ color: 'var(--primary)' }}>identifier</strong></div>
+                      <div>Missing: <strong style={{ color: 'var(--text-main)' }}>{col.missingCount} ({(col.missingPercentage * 100).toFixed(1)}%)</strong></div>
+                      <div>Unique count: <strong style={{ color: 'var(--text-main)' }}>{col.uniqueCount.toLocaleString()}</strong></div>
+                      <div>Duplicate count: <strong style={{ color: 'var(--text-main)' }}>{(col.identifierStats?.duplicateCount ?? 0).toLocaleString()}</strong></div>
+                      <div>Uniqueness: <strong style={{ color: 'var(--text-main)' }}>{col.identifierStats?.uniquenessPercentage ?? ((col.uniqueCount / Math.max(1, col.uniqueCount + col.missingCount)) * 100).toFixed(1)}%</strong></div>
+                    </div>
+                  ) : col.statistics ? (
                     <div className="stats-list" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                       <div>Mean: <strong style={{ color: 'var(--text-main)' }}>{col.statistics.mean}</strong></div>
                       <div>Median: <strong style={{ color: 'var(--text-main)' }}>{col.statistics.median}</strong></div>
