@@ -141,7 +141,9 @@ function generateDatasetInsights(rows, columns) {
   }
 
   // 2. COLUMN-BY-COLUMN QUALITY, OUTLIER & DISTRIBUTION ANALYSIS
-  normalizedColumns.forEach(colName => {
+  normalizedColumns.forEach(col => {
+    const colName = typeof col === 'object' && col !== null ? col.name : String(col);
+    if (!colName) return;
     let missingCount = 0;
     const validValues = [];
     const validNumbers = [];
@@ -238,9 +240,9 @@ function generateDatasetInsights(rows, columns) {
           insightType: 'outliers',
           severity,
           column: colName,
-          title: `Potential Outliers in '${colName}'`,
-          observation: `Column '${colName}' contains ${iqrStats.outlierCount} potential outlier(s) (${iqrStats.outlierPercentage}%) outside the statistical IQR bound [${iqrStats.lowerBound}, ${iqrStats.upperBound}].`,
-          whyItMatters: 'Potential outliers represent statistically unusual data points that may influence mean and standard deviation calculations.',
+          title: `Statistical Outliers in '${colName}'`,
+          observation: `Column '${colName}' contains ${iqrStats.outlierCount} statistical outlier(s) (${iqrStats.outlierPercentage}%) outside the IQR bound [${iqrStats.lowerBound}, ${iqrStats.upperBound}].`,
+          whyItMatters: `Column '${colName}' contains ${iqrStats.outlierCount} statistical outliers according to the IQR method. These values are statistically unusual data points and are not automatically considered data errors.`,
           evidence: {
             rowCount,
             column: colName,
@@ -256,7 +258,7 @@ function generateDatasetInsights(rows, columns) {
             sampleOutliers: iqrStats.sampleOutliers
           },
           confidence: 'high',
-          limitations: ['An outlier represents an unusual data point, not necessarily an error.']
+          limitations: ['An outlier represents an unusual data point, not automatically a data quality error.']
         });
       }
 

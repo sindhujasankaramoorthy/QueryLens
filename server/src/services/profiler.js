@@ -235,6 +235,11 @@ function isIdentifierColumn(colName, inferredType, uniqueCount, validCount) {
   if (!colName) return false;
   const name = String(colName).trim().toLowerCase();
 
+  const metricKeywords = ['sales', 'amount', 'price', 'quantity', 'revenue', 'cost', 'rating', 'profit', 'discount', 'score', 'total', 'val', 'value'];
+  if (metricKeywords.some(k => name.includes(k))) {
+    return false;
+  }
+
   const idPattern = /^(.+[\_\-\s])?(id|identifier|code|key|sku|uuid|guid|seq|number|num|#)$/i;
   const directMatch = (
     name === 'id' ||
@@ -285,6 +290,115 @@ function inferSemanticType(colName, inferredType, uniqueCount, validCount) {
     return 'measure';
   }
   return 'categorical';
+}
+
+function calculateNumericalIQR(numbers) {
+  if (!numbers || numbers.length < 4) return null;
+  const sorted = [...numbers].sort((a, b) => a - b);
+  const count = sorted.length;
+  const getPercentile = (arr, p) => {
+    const idx = (arr.length - 1) * p;
+    const lower = Math.floor(idx);
+    const upper = Math.ceil(idx);
+    return arr[lower] * (1 - (idx - lower)) + arr[upper] * (idx - lower);
+  };
+  const q1 = getPercentile(sorted, 0.25);
+  const q3 = getPercentile(sorted, 0.75);
+  const iqr = q3 - q1;
+  const lowerBound = q1 - 1.5 * iqr;
+  const upperBound = q3 + 1.5 * iqr;
+  const outliers = sorted.filter(v => v < lowerBound || v > upperBound);
+  return {
+    outlierCount: outliers.length,
+    outlierPercentage: Number(((outliers.length / count) * 100).toFixed(2)),
+    lowerBound: Number(lowerBound.toFixed(4)),
+    upperBound: Number(upperBound.toFixed(4))
+  };
+}
+
+function checkCategoricalConsistency(values) {
+  const countsMap = new Map();
+  const lowerMap = new Map();
+
+  values.forEach(v => {
+    const str = String(v).trim();
+    if (str === '') return;
+    countsMap.set(str, (countsMap.get(str) || 0) + 1);
+
+    const lower = str.toLowerCase();
+    if (!lowerMap.has(lower)) {
+      lowerMap.set(lower, new Map());
+    }
+    lowerMap.get(lower).set(str, (lowerMap.get(lower).get(str) || 0) + 1);
+  });
+
+  const caseInconsistencies = [];
+  lowerMap.forEach((variantsMap, lowerKey) => {
+    if (variantsMap.size > 1) {
+      const variants = Array.from(variantsMap.entries()).map(([val, cnt]) => `'${val}' (${cnt})`);
+      caseInconsistencies.push({
+        normalized: lowerKey,
+        variants
+      });
+    }
+  });
+
+  return {
+    uniqueCount: countsMap.size,
+    hasCaseInconsistency: caseInconsistencies.length > 0,
+    caseInconsistencies
+  };
+}
+
+function checkInvalidValues(colName, validValues, validNumbers, semanticType, inferredType) {
+  let invalidCount = 0;
+  const invalidReasons = [];
+
+  validNumbers.forEach(n => {
+    if (!isFinite(n)) {
+      invalidCount++;
+      if (!invalidReasons.includes('Non-finite numerical value (NaN or Infinity)')) {
+        invalidReasons.push('Non-finite numerical value (NaN or Infinity)');
+      }
+    }
+  });
+
+  const nameLower = String(colName).toLowerCase();
+  const nonNegativeKeywords = ['price', 'sales', 'quantity', 'rating', 'amount', 'cost', 'revenue', 'age', 'discount', 'score', 'count', 'num', 'total', 'index'];
+  const isLogicallyNonNegative = nonNegativeKeywords.some(k => nameLower.includes(k));
+
+  if (isLogicallyNonNegative && semanticType === 'measure') {
+    const negativeCount = validNumbers.filter(n => n < 0).length;
+    if (negativeCount > 0) {
+      invalidCount += negativeCount;
+      invalidReasons.push(`${negativeCount} negative value(s) in non-negative metric column '${colName}'`);
+    }
+  }
+
+  if (inferredType === 'date' || inferredType === 'datetime') {
+    validValues.forEach(v => {
+      if (typeof v === 'string') {
+        const str = v.trim();
+        const timestamp = Date.parse(str);
+        if (isNaN(timestamp)) {
+          invalidCount++;
+          if (!invalidReasons.includes('Unparseable date string')) {
+            invalidReasons.push('Unparseable date string');
+          }
+        } else {
+          const year = new Date(timestamp).getFullYear();
+          if (year < 1800 || year > 2100) {
+            invalidCount++;
+            if (!invalidReasons.includes(`Impossible date year (${year})`)) {
+              invalidReasons.push(`Impossible date year (${year})`);
+            }
+          }
+        }
+      }
+    });
+  }
+
+  return { invalidCount, invalidReasons };
 }
 
 function profileDataset(parsedData) {
@@ -376,6 +490,69 @@ function profileDataset(parsedData) {
       ? calculateCategoricalStats(validValues)
       : null;
 
+    const catCheck = checkCategoricalConsistency(validValues);
+    const invalidCheck = checkInvalidValues(colName, validValues, validNumbers, semanticType, type);
+
+    let outlierCount = 0;
+    let outlierDetails = null;
+    if (semanticType === 'measure' && (type === 'integer' || type === 'float') && validNumbers.length >= 4) {
+      const iqr = calculateNumericalIQR(validNumbers);
+      if (iqr && iqr.outlierCount > 0) {
+        outlierCount = iqr.outlierCount;
+        outlierDetails = iqr;
+      }
+    }
+
+    const colIssues = [];
+    let colStatus = 'Clean';
+
+    if (missingCount === rowCount) {
+      colStatus = 'Critical';
+      colIssues.push('Completely empty column (100% missing)');
+    } else if (missingPercentage >= 0.50) {
+      colStatus = 'Critical';
+      colIssues.push(`Extremely high missing values (${(missingPercentage * 100).toFixed(1)}%)`);
+    } else if (missingCount > 0) {
+      if (colStatus !== 'Critical') colStatus = 'Warning';
+      colIssues.push(`${missingCount} missing value(s) (${(missingPercentage * 100).toFixed(1)}%)`);
+    }
+
+    if (invalidCheck.invalidCount > 0) {
+      colStatus = 'Critical';
+      invalidCheck.invalidReasons.forEach(r => colIssues.push(`Invalid: ${r}`));
+    }
+
+    if (mixed) {
+      if (colStatus !== 'Critical') colStatus = 'Warning';
+      colIssues.push('Mixed data types detected (numeric & text)');
+    }
+
+    if (catCheck.hasCaseInconsistency) {
+      if (colStatus !== 'Critical') colStatus = 'Warning';
+      const sampleVar = catCheck.caseInconsistencies[0]?.variants?.slice(0, 2)?.join(', ') || '';
+      colIssues.push(`Inconsistent capitalization detected (${sampleVar})`);
+    }
+
+    if (outlierCount > 0) {
+      if (colStatus !== 'Critical') colStatus = 'Warning';
+      colIssues.push(`${outlierCount} statistical IQR outlier(s) detected [${outlierDetails.lowerBound}, ${outlierDetails.upperBound}]`);
+    }
+
+    if (semanticType === 'identifier') {
+      if (uniqueCount < validValues.length) {
+        if (colStatus !== 'Critical') colStatus = 'Warning';
+        colIssues.push(`${validValues.length - uniqueCount} duplicate ID(s) detected in identifier column`);
+      } else {
+        if (colIssues.length === 0) {
+          colIssues.push('No statistical aggregation required (Identifier)');
+        }
+      }
+    }
+
+    if (colIssues.length === 0) {
+      colIssues.push('Clean');
+    }
+
     columnProfiles.push({
       name: colName,
       type,
@@ -384,10 +561,16 @@ function profileDataset(parsedData) {
       missingCount,
       missingPercentage,
       uniqueCount,
+      outlierCount,
+      invalidCount: invalidCheck.invalidCount,
+      invalidReasons: invalidCheck.invalidReasons,
+      caseInconsistency: catCheck.hasCaseInconsistency ? catCheck.caseInconsistencies : null,
       sampleValues,
       statistics,
       categorical,
-      identifierStats
+      identifierStats,
+      status: colStatus,
+      issues: colIssues
     });
 
     // Generate warnings per column
@@ -448,7 +631,94 @@ function profileDataset(parsedData) {
         message: `Column '${colName}' contains ambiguous date formats (e.g., DD/MM vs MM/DD).`
       });
     }
+
+    if (invalidCheck.invalidCount > 0) {
+      warnings.push({
+        id: `warn_invalid_${colName}`,
+        type: 'invalid_values',
+        severity: 'critical',
+        column: colName,
+        message: `Column '${colName}' contains ${invalidCheck.invalidCount} invalid value(s).`
+      });
+    }
+
+    if (catCheck.hasCaseInconsistency) {
+      warnings.push({
+        id: `warn_case_${colName}`,
+        type: 'inconsistent_capitalization',
+        severity: 'warning',
+        column: colName,
+        message: `Categorical column '${colName}' has inconsistent capitalization/spelling variations.`
+      });
+    }
   });
+
+  const totalCells = rowCount * columnCount;
+  let totalMissing = 0;
+  let totalInvalid = 0;
+  let totalOutliers = 0;
+  let criticalColumnsCount = 0;
+  let warningColumnsCount = 0;
+
+  columnProfiles.forEach(c => {
+    totalMissing += c.missingCount;
+    totalInvalid += c.invalidCount || 0;
+    totalOutliers += c.outlierCount || 0;
+    if (c.status === 'Critical') criticalColumnsCount++;
+    else if (c.status === 'Warning') warningColumnsCount++;
+  });
+
+  const missingCellPercentage = totalCells > 0 ? Number(((totalMissing / totalCells) * 100).toFixed(2)) : 0;
+  const duplicateRowPercentage = Number((duplicates.percentage * 100).toFixed(2));
+
+  let overallStatus = 'CLEAN';
+  let statusMessage = 'No major data-quality issues detected. The dataset is suitable for analysis.';
+
+  if (criticalColumnsCount > 0 || duplicateRowPercentage >= 50.0 || missingCellPercentage >= 25.0 || totalInvalid > 0) {
+    overallStatus = 'CRITICAL';
+    statusMessage = 'Critical data-quality issues detected. Analysis results may be unreliable until data is cleaned.';
+  } else if (warningColumnsCount > 0 || duplicates.count > 0 || totalOutliers > 0 || totalMissing > 0) {
+    overallStatus = 'WARNING';
+    if (totalMissing > 0 && totalOutliers > 0) {
+      statusMessage = 'Minor data-quality issues detected. The dataset contains some missing values and statistical outliers, but no critical structural or invalid-data issues were found. Analysis can proceed with appropriate handling.';
+    } else if (totalOutliers > 0 && totalMissing === 0) {
+      statusMessage = 'Minor statistical anomalies detected. The dataset contains some statistical outliers, but no structural or invalid-data issues were found. Analysis can proceed with appropriate handling.';
+    } else {
+      statusMessage = 'Minor data-quality issues detected. The dataset contains some minor warnings, but no critical structural or invalid-data issues were found. Analysis can proceed with appropriate handling.';
+    }
+  }
+
+  const qualitySummary = {
+    overallStatus,
+    statusMessage,
+    metrics: {
+      rowCount,
+      columnCount,
+      totalCells,
+      totalMissing,
+      missingPercentage: missingCellPercentage,
+      totalDuplicates: duplicates.count,
+      duplicatePercentage: Number((duplicates.percentage * 100).toFixed(2)),
+      totalInvalid,
+      totalOutliers,
+      cleanColumnsCount: columnCount - (criticalColumnsCount + warningColumnsCount),
+      warningColumnsCount,
+      criticalColumnsCount
+    },
+    columnSummaryTable: columnProfiles.map(c => ({
+      name: c.name,
+      type: c.type,
+      dataType: c.dataType,
+      semanticType: c.semanticType,
+      missingCount: c.missingCount,
+      missingPercentage: c.missingPercentage,
+      uniqueCount: c.uniqueCount,
+      outlierCount: c.outlierCount || 0,
+      invalidCount: c.invalidCount || 0,
+      status: c.status,
+      issues: c.issues
+    }))
+  };
 
   return {
     rowCount,
@@ -462,7 +732,8 @@ function profileDataset(parsedData) {
     },
     columns: columnProfiles,
     duplicates,
-    warnings
+    warnings,
+    qualitySummary
   };
 }
 
@@ -474,5 +745,8 @@ module.exports = {
   inferSemanticType,
   calculateNumericalStats,
   calculateCategoricalStats,
-  detectDuplicates
+  detectDuplicates,
+  checkCategoricalConsistency,
+  checkInvalidValues,
+  calculateNumericalIQR
 };
