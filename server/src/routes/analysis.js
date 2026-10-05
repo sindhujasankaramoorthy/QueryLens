@@ -4,13 +4,14 @@ const { validateAnalysisPlan } = require('../services/planValidator');
 const { executeAnalysisPlan } = require('../services/analysisEngine');
 const { determineVisualization } = require('../services/chartSelector');
 const { generateExplanation } = require('../services/llmExplainer');
+const { generateDecisionSupport, generateExecutiveSummary, generateAnalysisReport } = require('../services/decisionSupport');
 
 const router = express.Router();
 
 /**
  * POST /api/analysis/execute
  * Takes natural language question (or plan), dataset schema, dataset rows, and optional context.
- * Generates plan, validates plan, executes plan deterministically, computes visualization & AI explanation.
+ * Generates plan, validates plan, executes plan deterministically, computes visualization, AI explanation, & decision support.
  */
 router.post('/execute', async (req, res) => {
   try {
@@ -87,13 +88,17 @@ router.post('/execute', async (req, res) => {
 
     const explanation = await generateExplanation(evidence);
 
+    // Phase 15: Decision Support & Evidence-Based Recommendations
+    const decisionSupport = generateDecisionSupport(executionResult);
+
     return res.status(200).json({
       success: true,
       question: question ? question.trim() : null,
       validation: validationResult,
       execution: executionResult,
       visualization,
-      explanation
+      explanation,
+      decisionSupport
     });
   } catch (err) {
     console.error('Execution Error:', err);
@@ -157,6 +162,7 @@ router.post('/chat', async (req, res) => {
     };
 
     const explanation = await generateExplanation(evidence);
+    const decisionSupport = generateDecisionSupport(executionResult);
 
     return res.status(200).json({
       success: true,
@@ -164,7 +170,8 @@ router.post('/chat', async (req, res) => {
       validation: validationResult,
       execution: executionResult,
       visualization,
-      explanation
+      explanation,
+      decisionSupport
     });
   } catch (err) {
     console.error('Chat Error:', err);
@@ -272,7 +279,6 @@ router.post('/suggested-questions', (req, res) => {
 
 /**
  * POST /api/analysis/insights
- * Phase 6 Endpoint: Generates deterministic dataset insights, IQR outliers, and AI evidence synthesis.
  */
 router.post('/insights', async (req, res) => {
   try {
@@ -298,4 +304,35 @@ router.post('/insights', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/analysis/executive-summary
+ * Phase 15 Endpoint: Computes Executive Summary from profile, quality summary, & active execution result.
+ */
+router.post('/executive-summary', (req, res) => {
+  try {
+    const { profile, qualitySummary, insights, executionResult } = req.body;
+    const summary = generateExecutiveSummary(profile, qualitySummary, insights, executionResult);
+    return res.json({ success: true, executiveSummary: summary });
+  } catch (err) {
+    console.error('Executive Summary Route Error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to generate Executive Summary.' });
+  }
+});
+
+/**
+ * POST /api/analysis/report
+ * Phase 15 Endpoint: Generates a complete structured Analysis Report for dataset export.
+ */
+router.post('/report', (req, res) => {
+  try {
+    const { profile, qualitySummary, insights, executionResult, question, title } = req.body;
+    const report = generateAnalysisReport(profile, qualitySummary, insights, executionResult, { question, title });
+    return res.json({ success: true, report });
+  } catch (err) {
+    console.error('Report Generation Route Error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to generate Analysis Report.' });
+  }
+});
+
 module.exports = router;
+

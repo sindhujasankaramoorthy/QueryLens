@@ -1804,6 +1804,604 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
       };
     }
 
+    case 'executive_summary': {
+      // 1. Column analysis and Schema profiling
+      const totalRows = rows.length;
+      const sampleRow = rows[0] || {};
+      const allColNames = Object.keys(sampleRow);
+      const totalCols = allColNames.length;
+
+      const isIdCol = (name) => {
+        const lower = String(name).toLowerCase().trim();
+        return lower === 'id' || lower.endsWith('_id') || lower.startsWith('id_') || lower.includes('order_id') || lower.includes('customer_id') || lower.includes('user_id') || lower.includes('row_id') || lower.includes('index') || lower === '#';
+      };
+
+      const numericCols = [];
+      const categoricalCols = [];
+      const dateCols = [];
+
+      allColNames.forEach(col => {
+        if (isIdCol(col)) return;
+        const vals = rows.map(r => r[col]).filter(v => v !== null && v !== undefined && v !== '');
+        if (vals.length === 0) return;
+
+        const numCount = vals.filter(v => typeof v === 'number' || (!isNaN(Number(v)) && String(v).trim() !== '')).length;
+        const isNumeric = numCount / vals.length > 0.8;
+
+        if (isNumeric) {
+          numericCols.push(col);
+        } else {
+          const lower = col.toLowerCase();
+          const isDate = ['date', 'time', 'month', 'year', 'day', 'timestamp', 'created_at', 'order_date'].some(k => lower.includes(k)) ||
+            vals.slice(0, 10).every(v => !isNaN(Date.parse(v)));
+          if (isDate) {
+            dateCols.push(col);
+          } else {
+            categoricalCols.push(col);
+          }
+        }
+      });
+
+      // 2. Missing values & Duplicates
+      let totalCells = totalRows * totalCols;
+      let missingCells = 0;
+      rows.forEach(r => {
+        allColNames.forEach(col => {
+          if (r[col] === null || r[col] === undefined || r[col] === '') {
+            missingCells++;
+          }
+        });
+      });
+      const missingPercent = totalCells > 0 ? Number(((missingCells / totalCells) * 100).toFixed(2)) : 0;
+
+      const seen = new Set();
+      let duplicateRows = 0;
+      rows.forEach(r => {
+        const str = JSON.stringify(r);
+        if (seen.has(str)) duplicateRows++;
+        else seen.add(str);
+      });
+
+      // Quality Status
+      let dataQualityStatus = 'CLEAN';
+      let dataQualityMessage = 'Dataset is clean with zero missing values or duplicate records detected.';
+      if (missingPercent > 20 || duplicateRows > totalRows * 0.1) {
+        dataQualityStatus = 'CRITICAL';
+        dataQualityMessage = `Critical data quality issues: ${missingCells} missing cell(s) (${missingPercent}%) and ${duplicateRows} duplicate row(s).`;
+      } else if (missingPercent > 0 || duplicateRows > 0) {
+        dataQualityStatus = 'WARNING';
+        dataQualityMessage = `Data Quality Status: WARNING — ${missingCells} missing cell(s) (${missingPercent}%) and ${duplicateRows} duplicate row(s) detected.`;
+      }
+
+      // 3. Descriptive Stats & Outliers for Numeric Columns
+      const stats = {};
+      let totalIQRAnomalies = 0;
+      numericCols.forEach(col => {
+        const { numbers } = extractNumericArray(rows, col);
+        if (numbers.length > 0) {
+          const sorted = [...numbers].sort((a, b) => a - b);
+          const count = sorted.length;
+          const min = sorted[0];
+          const max = sorted[count - 1];
+          const sum = sorted.reduce((a, b) => a + b, 0);
+          const mean = Number((sum / count).toFixed(4));
+          const mid = Math.floor(count / 2);
+          const median = count % 2 === 0 ? Number(((sorted[mid - 1] + sorted[mid]) / 2).toFixed(4)) : sorted[mid];
+
+          const getP = (arr, p) => arr[Math.floor((arr.length - 1) * p)];
+          const q1 = getP(sorted, 0.25);
+          const q3 = getP(sorted, 0.75);
+          const iqr = q3 - q1;
+          const lowerB = q1 - 1.5 * iqr;
+          const upperB = q3 + 1.5 * iqr;
+          const outliers = sorted.filter(v => v < lowerB || v > upperB).length;
+          totalIQRAnomalies += outliers;
+
+          stats[col] = { count, min, max, mean, median, iqrOutliers: outliers };
+        }
+      });
+
+      // 4. Correlations
+      let correlationSummary = "Not available from the current analysis.";
+      const topCorrelations = [];
+      if (numericCols.length >= 2) {
+        for (let i = 0; i < numericCols.length; i++) {
+          for (let j = i + 1; j < numericCols.length; j++) {
+            const colA = numericCols[i];
+            const colB = numericCols[j];
+            const validPairs = rows
+              .map(r => ({ a: Number(r[colA]), b: Number(r[colB]) }))
+              .filter(p => !isNaN(p.a) && !isNaN(p.b));
+
+            if (validPairs.length >= 3) {
+              const meanA = validPairs.reduce((s, p) => s + p.a, 0) / validPairs.length;
+              const meanB = validPairs.reduce((s, p) => s + p.b, 0) / validPairs.length;
+              let num = 0, denA = 0, denB = 0;
+              validPairs.forEach(p => {
+                const diffA = p.a - meanA;
+                const diffB = p.b - meanB;
+                num += diffA * diffB;
+                denA += diffA * diffA;
+                denB += diffB * diffB;
+              });
+              if (denA > 0 && denB > 0) {
+                const r = num / (Math.sqrt(denA) * Math.sqrt(denB));
+                topCorrelations.push({
+                  pair: `${colA} & ${colB}`,
+                  r: Number(r.toFixed(4)),
+                  strength: Math.abs(r) >= 0.7 ? 'Strong' : Math.abs(r) >= 0.4 ? 'Moderate' : 'Weak'
+                });
+              }
+            }
+          }
+        }
+        if (topCorrelations.length > 0) {
+          topCorrelations.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+          const top = topCorrelations[0];
+          correlationSummary = `Top correlation: ${top.pair} (r = ${top.r}, ${top.strength})`;
+        }
+      }
+
+      // 5. Trend Analysis
+      let trendSummary = "Not available from the current analysis.";
+      if (dateCols.length > 0 && numericCols.length > 0) {
+        const dateCol = dateCols[0];
+        const numCol = numericCols.find(c => c.toLowerCase().includes('sales') || c.toLowerCase().includes('revenue')) || numericCols[0];
+        
+        const monthlyGroups = new Map();
+        rows.forEach(r => {
+          const dVal = r[dateCol];
+          if (dVal) {
+            const k = getTimeGroupKey(dVal, 'MONTH');
+            if (k) {
+              const val = Number(r[numCol]);
+              if (!isNaN(val)) {
+                monthlyGroups.set(k, (monthlyGroups.get(k) || 0) + val);
+              }
+            }
+          }
+        });
+
+        const sortedKeys = Array.from(monthlyGroups.keys()).sort();
+        if (sortedKeys.length >= 2) {
+          const points = sortedKeys.map(k => ({ y: monthlyGroups.get(k) }));
+          const tr = calculateLinearTrend(points, 'MONTH');
+          trendSummary = `${numCol} trend across ${sortedKeys.length} period(s): ${tr.trendDirection} (Slope: ${Number(tr.slope.toFixed(2))}, R²: ${Number(tr.r2.toFixed(4))})`;
+        }
+      }
+
+      // 6. Forecasting Summary
+      let forecastSummary = "Not available from the current analysis.";
+      if (dateCols.length > 0 && numericCols.length > 0) {
+        const dateCol = dateCols[0];
+        const numCol = numericCols.find(c => c.toLowerCase().includes('sales') || c.toLowerCase().includes('revenue')) || numericCols[0];
+        
+        const monthlyGroups = new Map();
+        rows.forEach(r => {
+          const dVal = r[dateCol];
+          if (dVal) {
+            const k = getTimeGroupKey(dVal, 'MONTH');
+            if (k) {
+              const val = Number(r[numCol]);
+              if (!isNaN(val)) {
+                monthlyGroups.set(k, (monthlyGroups.get(k) || 0) + val);
+              }
+            }
+          }
+        });
+
+        const sortedKeys = Array.from(monthlyGroups.keys()).sort();
+        if (sortedKeys.length >= 3) {
+          const yValues = sortedKeys.map(k => monthlyGroups.get(k));
+          const N = yValues.length;
+          let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+          yValues.forEach((y, i) => {
+            const x = i + 1;
+            sumX += x;
+            sumY += y;
+            sumXY += x * y;
+            sumX2 += x * x;
+          });
+          const slope = (N * sumXY - sumX * sumY) / (N * sumX2 - sumX * sumX);
+          const intercept = (sumY - slope * sumX) / N;
+          const nextVal = intercept + slope * (N + 1);
+          forecastSummary = `Linear 1-period forecast for ${numCol}: ${Number(nextVal.toFixed(2))} (based on ${N} historical period(s))`;
+        }
+      }
+
+      const summaryMetrics = [
+        { Metric: 'Total Rows Analyzed', Value: totalRows },
+        { Metric: 'Total Schema Columns', Value: totalCols },
+        { Metric: 'Missing Values Count', Value: missingCells },
+        { Metric: 'Missing Values (%)', Value: `${missingPercent}%` },
+        { Metric: 'Duplicate Rows Count', Value: duplicateRows },
+        { Metric: 'IQR Statistical Outliers', Value: totalIQRAnomalies },
+        { Metric: 'Data Quality Status', Value: dataQualityStatus },
+        { Metric: 'Trend Analysis', Value: trendSummary },
+        { Metric: 'Top Correlation', Value: correlationSummary },
+        { Metric: 'Forecast Summary', Value: forecastSummary }
+      ];
+
+      resultData = summaryMetrics;
+
+      return {
+        status: 'success',
+        operation: 'executive_summary',
+        columnsUsed: allColNames,
+        result: resultData,
+        metadata: {
+          operation: 'executive_summary',
+          totalRows,
+          totalCols,
+          missingCells,
+          missingPercent,
+          duplicateRows,
+          dataQualityStatus,
+          dataQualityMessage,
+          numericColumnsCount: numericCols.length,
+          categoricalColumnsCount: categoricalCols.length,
+          dateColumnsCount: dateCols.length,
+          stats,
+          totalIQRAnomalies,
+          topCorrelations,
+          trendSummary,
+          correlationSummary,
+          forecastSummary,
+          deterministicFindings: {
+            datasetOverview: {
+              rows: totalRows,
+              columns: totalCols,
+              numericColumns: numericCols,
+              categoricalColumns: categoricalCols,
+              dateColumns: dateCols
+            },
+            dataQuality: {
+              status: dataQualityStatus,
+              missingCells,
+              missingPercent,
+              duplicateRows,
+              message: dataQualityMessage
+            },
+            majorStatisticalFindings: stats,
+            importantTrends: trendSummary,
+            importantCorrelations: correlationSummary,
+            anomaliesOutliers: `${totalIQRAnomalies} IQR Statistical Outlier(s) detected`,
+            forecastingInsight: forecastSummary
+          },
+          naturalLanguageExplanation: {
+            summaryText: `The dataset contains ${totalRows} rows across ${totalCols} columns (${numericCols.length} numeric, ${categoricalCols.length} categorical, ${dateCols.length} date). Overall Data Quality is ${dataQualityStatus}. Total IQR Statistical Outliers: ${totalIQRAnomalies}.`,
+            keyTakeaway: `Data ready for decision support analysis. Quality status: ${dataQualityStatus}.`
+          }
+        }
+      };
+    }
+
+    case 'complete_report':
+    case 'analysis_report': {
+      // Complete Analysis Report executes dataset overview, quality, stats, correlations, trends, outliers, forecast & recommendations
+      const totalRows = rows.length;
+      const sampleRow = rows[0] || {};
+      const allColNames = Object.keys(sampleRow);
+      const totalCols = allColNames.length;
+
+      const isIdCol = (name) => {
+        const lower = String(name).toLowerCase().trim();
+        return lower === 'id' || lower.endsWith('_id') || lower.startsWith('id_') || lower.includes('order_id') || lower.includes('customer_id') || lower.includes('user_id') || lower.includes('row_id') || lower.includes('index') || lower === '#';
+      };
+
+      const numericCols = [];
+      const categoricalCols = [];
+      const dateCols = [];
+
+      allColNames.forEach(col => {
+        if (isIdCol(col)) return;
+        const vals = rows.map(r => r[col]).filter(v => v !== null && v !== undefined && v !== '');
+        if (vals.length === 0) return;
+        const numCount = vals.filter(v => typeof v === 'number' || (!isNaN(Number(v)) && String(v).trim() !== '')).length;
+        if (numCount / vals.length > 0.8) numericCols.push(col);
+        else {
+          const lower = col.toLowerCase();
+          const isDate = ['date', 'time', 'month', 'year', 'day', 'timestamp', 'created_at', 'order_date'].some(k => lower.includes(k)) || vals.slice(0, 10).every(v => !isNaN(Date.parse(v)));
+          if (isDate) dateCols.push(col);
+          else categoricalCols.push(col);
+        }
+      });
+
+      let totalCells = totalRows * totalCols;
+      let missingCells = 0;
+      rows.forEach(r => {
+        allColNames.forEach(col => {
+          if (r[col] === null || r[col] === undefined || r[col] === '') missingCells++;
+        });
+      });
+      const missingPercent = totalCells > 0 ? Number(((missingCells / totalCells) * 100).toFixed(2)) : 0;
+
+      const seen = new Set();
+      let duplicateRows = 0;
+      rows.forEach(r => {
+        const str = JSON.stringify(r);
+        if (seen.has(str)) duplicateRows++;
+        else seen.add(str);
+      });
+
+      let dataQualityStatus = missingPercent > 20 ? 'CRITICAL' : (missingPercent > 0 || duplicateRows > 0 ? 'WARNING' : 'CLEAN');
+      let dataQualityMessage = dataQualityStatus === 'CLEAN'
+        ? 'Dataset is clean with zero missing values or duplicate records detected.'
+        : `Data Quality Status: ${dataQualityStatus} — ${missingCells} missing cell(s) (${missingPercent}%) and ${duplicateRows} duplicate row(s) detected.`;
+
+      const stats = {};
+      let totalIQRAnomalies = 0;
+      numericCols.forEach(col => {
+        const { numbers } = extractNumericArray(rows, col);
+        if (numbers.length > 0) {
+          const sorted = [...numbers].sort((a, b) => a - b);
+          const count = sorted.length;
+          const min = sorted[0];
+          const max = sorted[count - 1];
+          const sum = sorted.reduce((a, b) => a + b, 0);
+          const mean = Number((sum / count).toFixed(4));
+          const mid = Math.floor(count / 2);
+          const median = count % 2 === 0 ? Number(((sorted[mid - 1] + sorted[mid]) / 2).toFixed(4)) : sorted[mid];
+          const getP = (arr, p) => arr[Math.floor((arr.length - 1) * p)];
+          const q1 = getP(sorted, 0.25);
+          const q3 = getP(sorted, 0.75);
+          const iqr = q3 - q1;
+          const lowerB = q1 - 1.5 * iqr;
+          const upperB = q3 + 1.5 * iqr;
+          const outliers = sorted.filter(v => v < lowerB || v > upperB).length;
+          totalIQRAnomalies += outliers;
+          stats[col] = { count, min, max, mean, median, iqrOutliers: outliers };
+        }
+      });
+
+      let correlationSummary = "Not available from the current analysis.";
+      const topCorrelations = [];
+      if (numericCols.length >= 2) {
+        for (let i = 0; i < numericCols.length; i++) {
+          for (let j = i + 1; j < numericCols.length; j++) {
+            const colA = numericCols[i];
+            const colB = numericCols[j];
+            const validPairs = rows.map(r => ({ a: Number(r[colA]), b: Number(r[colB]) })).filter(p => !isNaN(p.a) && !isNaN(p.b));
+            if (validPairs.length >= 3) {
+              const meanA = validPairs.reduce((s, p) => s + p.a, 0) / validPairs.length;
+              const meanB = validPairs.reduce((s, p) => s + p.b, 0) / validPairs.length;
+              let num = 0, denA = 0, denB = 0;
+              validPairs.forEach(p => {
+                const diffA = p.a - meanA, diffB = p.b - meanB;
+                num += diffA * diffB; denA += diffA * diffA; denB += diffB * diffB;
+              });
+              if (denA > 0 && denB > 0) {
+                const r = num / (Math.sqrt(denA) * Math.sqrt(denB));
+                topCorrelations.push({ pair: `${colA} & ${colB}`, r: Number(r.toFixed(4)), strength: Math.abs(r) >= 0.7 ? 'Strong' : Math.abs(r) >= 0.4 ? 'Moderate' : 'Weak' });
+              }
+            }
+          }
+        }
+        if (topCorrelations.length > 0) {
+          topCorrelations.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+          const top = topCorrelations[0];
+          correlationSummary = `Top correlation: ${top.pair} (r = ${top.r}, ${top.strength})`;
+        }
+      }
+
+      let trendSummary = "Not available from the current analysis.";
+      if (dateCols.length > 0 && numericCols.length > 0) {
+        const dateCol = dateCols[0];
+        const numCol = numericCols.find(c => c.toLowerCase().includes('sales') || c.toLowerCase().includes('revenue')) || numericCols[0];
+        const monthlyGroups = new Map();
+        rows.forEach(r => {
+          const dVal = r[dateCol];
+          if (dVal) {
+            const k = getTimeGroupKey(dVal, 'MONTH');
+            if (k) {
+              const val = Number(r[numCol]);
+              if (!isNaN(val)) monthlyGroups.set(k, (monthlyGroups.get(k) || 0) + val);
+            }
+          }
+        });
+        const sortedKeys = Array.from(monthlyGroups.keys()).sort();
+        if (sortedKeys.length >= 2) {
+          const points = sortedKeys.map(k => ({ y: monthlyGroups.get(k) }));
+          const tr = calculateLinearTrend(points, 'MONTH');
+          trendSummary = `${numCol} trend across ${sortedKeys.length} period(s): ${tr.trendDirection} (Slope: ${Number(tr.slope.toFixed(2))}, R²: ${Number(tr.r2.toFixed(4))})`;
+        }
+      }
+
+      let forecastSummary = "Not available from the current analysis.";
+      if (dateCols.length > 0 && numericCols.length > 0) {
+        const dateCol = dateCols[0];
+        const numCol = numericCols.find(c => c.toLowerCase().includes('sales') || c.toLowerCase().includes('revenue')) || numericCols[0];
+        const monthlyGroups = new Map();
+        rows.forEach(r => {
+          const dVal = r[dateCol];
+          if (dVal) {
+            const k = getTimeGroupKey(dVal, 'MONTH');
+            if (k) {
+              const val = Number(r[numCol]);
+              if (!isNaN(val)) monthlyGroups.set(k, (monthlyGroups.get(k) || 0) + val);
+            }
+          }
+        });
+        const sortedKeys = Array.from(monthlyGroups.keys()).sort();
+        if (sortedKeys.length >= 3) {
+          const yValues = sortedKeys.map(k => monthlyGroups.get(k));
+          const N = yValues.length;
+          let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+          yValues.forEach((y, i) => { const x = i + 1; sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x; });
+          const slope = (N * sumXY - sumX * sumY) / (N * sumX2 - sumX * sumX);
+          const intercept = (sumY - slope * sumX) / N;
+          const nextVal = intercept + slope * (N + 1);
+          forecastSummary = `Linear 1-period forecast for ${numCol}: ${Number(nextVal.toFixed(2))} (based on ${N} historical period(s))`;
+        }
+      }
+
+      resultData = [
+        { Section: '1. Dataset Overview', Value: `${totalRows} rows, ${totalCols} columns (${numericCols.length} numeric, ${categoricalCols.length} categorical, ${dateCols.length} date)` },
+        { Section: '2. Data Quality Status', Value: `${dataQualityStatus} (${missingCells} missing cells, ${duplicateRows} duplicate rows)` },
+        { Section: '3. Outliers & Anomalies', Value: `${totalIQRAnomalies} IQR Statistical Outliers detected` },
+        { Section: '4. Trend Analysis', Value: trendSummary },
+        { Section: '5. Correlation Analysis', Value: correlationSummary },
+        { Section: '6. Forecasting Projection', Value: forecastSummary }
+      ];
+
+      return {
+        status: 'success',
+        operation: 'complete_report',
+        columnsUsed: allColNames,
+        result: resultData,
+        metadata: {
+          operation: 'complete_report',
+          totalRows,
+          totalCols,
+          missingCells,
+          missingPercent,
+          duplicateRows,
+          dataQualityStatus,
+          dataQualityMessage,
+          stats,
+          totalIQRAnomalies,
+          topCorrelations,
+          trendSummary,
+          correlationSummary,
+          forecastSummary,
+          traceability: {
+            calculatedEvidence: 'Phases 1-14 Execution Engine Output',
+            aiExplanations: 'Grounded Natural Language Summary & Recommendations'
+          }
+        }
+      };
+    }
+
+    case 'regional_analysis': {
+      const groupCol = plan.groupBy || plan.group_by || 'Region';
+      const measureCol = plan.measure || plan.target || 'Sales';
+      const dateCol = plan.date_column || plan.dateColumn || null;
+
+      const groups = new Map();
+      let totalMeasureSum = 0;
+
+      rows.forEach(r => {
+        const gKey = r[groupCol] !== undefined && r[groupCol] !== null ? String(r[groupCol]) : 'Unknown';
+        const val = Number(r[measureCol]);
+        if (!isNaN(val)) {
+          totalMeasureSum += val;
+          if (!groups.has(gKey)) {
+            groups.set(gKey, { count: 0, sum: 0, values: [], dates: [] });
+          }
+          const gObj = groups.get(gKey);
+          gObj.count++;
+          gObj.sum += val;
+          gObj.values.push(val);
+          if (dateCol && r[dateCol]) gObj.dates.push({ date: r[dateCol], val });
+        }
+      });
+
+      const regionalBreakdown = [];
+      groups.forEach((gObj, gName) => {
+        const mean = gObj.count > 0 ? gObj.sum / gObj.count : 0;
+        const sharePct = totalMeasureSum > 0 ? Number(((gObj.sum / totalMeasureSum) * 100).toFixed(2)) : 0;
+        
+        let recentDropPct = 0;
+        if (dateCol && gObj.dates.length >= 2) {
+          const sortedDates = [...gObj.dates].sort((a, b) => new Date(a.date) - new Date(b.date));
+          const latestVal = sortedDates[sortedDates.length - 1].val;
+          const prevVal = sortedDates[sortedDates.length - 2].val;
+          if (prevVal > 0) {
+            recentDropPct = Number((((latestVal - prevVal) / prevVal) * 100).toFixed(2));
+          }
+        }
+
+        regionalBreakdown.push({
+          Region: gName,
+          TotalSales: Number(gObj.sum.toFixed(2)),
+          MeanSales: Number(mean.toFixed(2)),
+          OrderCount: gObj.count,
+          SharePercent: sharePct,
+          RecentChangePercent: recentDropPct
+        });
+      });
+
+      regionalBreakdown.sort((a, b) => b.TotalSales - a.TotalSales);
+
+      let focusRegionObj = regionalBreakdown.find(r => r.RecentChangePercent < -20) ||
+        regionalBreakdown[regionalBreakdown.length - 1] ||
+        regionalBreakdown[0];
+
+      resultData = regionalBreakdown;
+
+      return {
+        status: 'success',
+        operation: 'regional_analysis',
+        columnsUsed: [groupCol, measureCol, dateCol].filter(Boolean),
+        result: resultData,
+        metadata: {
+          operation: 'regional_analysis',
+          groupBy: groupCol,
+          measure: measureCol,
+          totalSystemSales: Number(totalMeasureSum.toFixed(2)),
+          focusRegion: focusRegionObj.Region,
+          focusRegionSales: focusRegionObj.TotalSales,
+          focusRegionShare: focusRegionObj.SharePercent,
+          focusRegionChange: focusRegionObj.RecentChangePercent,
+          regionalBreakdown,
+          reasonForFocus: focusRegionObj.RecentChangePercent < 0 
+            ? `${focusRegionObj.Region} region experienced an acute ${Math.abs(focusRegionObj.RecentChangePercent)}% contraction in the recent period, requiring immediate operational attention.`
+            : `${focusRegionObj.Region} region represents the primary operational metric segment under evaluation (${focusRegionObj.SharePercent}% market share).`
+        }
+      };
+    }
+
+    case 'select': {
+      const targetCol = plan.column || plan.measure || (schemaColumns[0] ? schemaColumns[0].name : 'Order_ID');
+      const limitVal = plan.limit || 50;
+      const values = rows.slice(0, limitVal).map(r => getCellValue(r, targetCol)).filter(v => v !== undefined && v !== null);
+      resultData = values.map(val => ({ [targetCol]: val }));
+      columnsUsed = [targetCol];
+      return {
+        status: 'success',
+        operation: 'select',
+        columnsUsed,
+        result: resultData,
+        metadata: {
+          operation: 'select',
+          column: targetCol,
+          limit: limitVal,
+          totalRetrieved: resultData.length,
+          rowsAnalyzed
+        }
+      };
+    }
+
+    case 'schema_info': {
+      const sampleRow = rows[0] || {};
+      const colNames = Object.keys(sampleRow);
+      const columnsInfo = colNames.map(col => {
+        const val = sampleRow[col];
+        let type = typeof val;
+        if (type === 'number') type = Number.isInteger(val) ? 'integer' : 'float';
+        const nameLower = col.toLowerCase();
+        let semanticType = 'categorical';
+        if (nameLower.includes('id') || nameLower === '#') semanticType = 'identifier';
+        else if (type === 'integer' || type === 'float') semanticType = 'measure';
+        else if (nameLower.includes('date') || nameLower.includes('time')) semanticType = 'datetime';
+        return { name: col, type, semanticType };
+      });
+      resultData = columnsInfo;
+      columnsUsed = columnsInfo.map(c => c.name);
+      return {
+        status: 'success',
+        operation: 'schema_info',
+        columnsUsed,
+        result: resultData,
+        metadata: {
+          operation: 'schema_info',
+          totalColumns: columnsInfo.length,
+          columns: columnsInfo,
+          rowsAnalyzed
+        }
+      };
+    }
+
     default:
       throw new Error(`Unsupported engine operation '${operation}'.`);
   }

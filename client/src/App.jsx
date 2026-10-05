@@ -5,12 +5,14 @@ import QualityWarnings from './components/QualityWarnings';
 import ColumnProfile from './components/ColumnProfile';
 import QuestionPlanner from './components/QuestionPlanner';
 import DataQualityInsights from './components/DataQualityInsights';
-import { Sparkles, Sun, Moon, RefreshCw, BarChart3, Database, MessageSquare, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import ExecutiveSummaryModal from './components/ExecutiveSummaryModal';
+import { Sparkles, Sun, Moon, RefreshCw, BarChart3, Database, MessageSquare, ShieldCheck, CheckCircle2, FileText } from 'lucide-react';
 
 export default function App() {
   const [profileData, setProfileData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
 
   // Theme toggle state (dark default, persisted in localStorage)
   const [theme, setTheme] = useState(() => {
@@ -68,13 +70,13 @@ export default function App() {
           </span>
           <div>
             <h1 className="brand-title">Schema-Agnostic AI Data Analyst</h1>
-            <span className="brand-sub">Verifiable Numerical Analytics & Quality Engine</span>
+            <span className="brand-sub">Verifiable Numerical Analytics & Decision Support Engine</span>
           </div>
         </div>
 
         <div className="header-controls">
           <span className="phase-pill">
-            <Sparkles size={13} /> Phase 8: Data Quality & Validation
+            <Sparkles size={13} /> Phase 15: Decision Support & Final Report
           </span>
 
           <button
@@ -119,7 +121,7 @@ export default function App() {
           <div className="step-divider" />
           <div className={`step-item ${profileData ? 'active' : ''}`}>
             <span className="step-number">4</span>
-            <span>Data Quality Audit</span>
+            <span>Decision Support & Report</span>
           </div>
         </div>
 
@@ -143,10 +145,16 @@ export default function App() {
                 </p>
               </div>
 
-              <button className="btn btn-secondary" onClick={handleReset}>
-                <RefreshCw size={15} />
-                Upload New Dataset
-              </button>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <button className="btn btn-primary" onClick={() => setIsSummaryModalOpen(true)}>
+                  <FileText size={15} />
+                  Executive Summary & Report
+                </button>
+                <button className="btn btn-secondary" onClick={handleReset}>
+                  <RefreshCw size={15} />
+                  Upload New Dataset
+                </button>
+              </div>
             </div>
 
             {/* 1. Dataset Overview & Metrics Grid */}
@@ -177,10 +185,21 @@ export default function App() {
             <ColumnProfile columns={profileData.columns} />
 
             {/* 5. Dataset Quality Warnings */}
-            <QualityWarnings warnings={profileData.warnings} />
+            <QualityWarnings 
+              warnings={profileData.warnings} 
+              qualitySummary={profileData.qualitySummary}
+            />
+
+            {/* Phase 15 Executive Summary & Report Modal */}
+            <ExecutiveSummaryModal 
+              isOpen={isSummaryModalOpen} 
+              onClose={() => setIsSummaryModalOpen(false)} 
+              profileData={profileData} 
+            />
           </div>
         )}
       </main>
     </div>
   );
 }
+

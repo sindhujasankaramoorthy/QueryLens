@@ -23,7 +23,13 @@ const SUPPORTED_OPERATIONS = new Set([
   'correlation_matrix',
   'anomaly_detection',
   'forecast',
-  'insight_analysis'
+  'insight_analysis',
+  'executive_summary',
+  'complete_report',
+  'analysis_report',
+  'regional_analysis',
+  'select',
+  'schema_info'
 ]);
 
 const SUPPORTED_AGGREGATIONS = new Set([
@@ -144,6 +150,45 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
     };
   }
 
+  // Schema Info validation handler
+  if (operation === 'schema_info') {
+    return {
+      isValid: true,
+      status: 'validated',
+      plan: {
+        operation: 'schema_info'
+      },
+      reason: null
+    };
+  }
+
+  // Executive Summary & Complete Report validation handlers (dataset-level operations, no column matching required)
+  if (operation === 'executive_summary' || operation === 'complete_report' || operation === 'analysis_report') {
+    return {
+      isValid: true,
+      status: 'validated',
+      plan: {
+        operation: operation === 'analysis_report' ? 'complete_report' : operation
+      },
+      reason: null
+    };
+  }
+
+  // Regional Analysis validation handler
+  if (operation === 'regional_analysis') {
+    return {
+      isValid: true,
+      status: 'validated',
+      plan: {
+        operation: 'regional_analysis',
+        groupBy: plan.groupBy || plan.group_by || 'Region',
+        measure: plan.measure || plan.target || 'Sales',
+        date_column: plan.date_column || plan.dateColumn || null
+      },
+      reason: null
+    };
+  }
+
   // Build schema map for fast lookup & canonical column name resolution
   const schemaMap = new Map();
   const canonicalMap = new Map();
@@ -228,6 +273,28 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
         if (err) return { isValid: false, status: 'rejected', plan: null, reason: err };
       }
     }
+  }
+
+  if (operation === 'select') {
+    const targetCol = plan.column || plan.measure;
+    if (!targetCol) {
+      return { isValid: false, status: 'rejected', plan: null, reason: 'Select operation requires a target column.' };
+    }
+    const err = checkColumn(targetCol, 'select');
+    if (err) return { isValid: false, status: 'rejected', plan: null, reason: err };
+
+    return {
+      isValid: true,
+      status: 'validated',
+      plan: {
+        operation: 'select',
+        column: getCanonicalColName(targetCol),
+        measure: getCanonicalColName(targetCol),
+        limit: plan.limit || 50,
+        filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
+      },
+      reason: null
+    };
   }
 
   // 2. Data Type & Semantic Compatibility Checks

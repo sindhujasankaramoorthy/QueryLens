@@ -17,115 +17,31 @@ function formatNumberUS(num) {
 function extractEvidenceNumbers(evidence) {
   const numbers = new Set();
 
-  if (evidence?.metadata?.rowsAnalyzed !== undefined) {
-    numbers.add(String(evidence.metadata.rowsAnalyzed));
-  }
-  if (evidence?.metadata?.missingPairsExcluded !== undefined) {
-    numbers.add(String(evidence.metadata.missingPairsExcluded));
-  }
-  if (evidence?.metadata?.pearsonR !== undefined) {
-    numbers.add(String(evidence.metadata.pearsonR));
-    numbers.add(Math.abs(evidence.metadata.pearsonR).toString());
-    numbers.add(Number(evidence.metadata.pearsonR).toFixed(2));
-  }
-  if (evidence?.metadata?.rawR !== undefined) {
-    numbers.add(String(evidence.metadata.rawR));
-    numbers.add(Math.abs(evidence.metadata.rawR).toString());
-    numbers.add(Number(evidence.metadata.rawR).toFixed(2));
-  }
+  // Recursively extract all numbers from metadata values or text strings
+  const extractAllNumbers = (obj) => {
+    if (obj === null || obj === undefined) return;
+    if (typeof obj === 'number') {
+      numbers.add(String(obj));
+      numbers.add(obj.toString());
+      numbers.add(Math.abs(obj).toString());
+      numbers.add(obj.toFixed(2));
+      numbers.add(obj.toFixed(4));
+      numbers.add(Math.abs(obj).toFixed(2));
+    } else if (typeof obj === 'string') {
+      const matches = obj.match(/\b\d+(?:\.\d+)?\b/g);
+      if (matches) matches.forEach(n => numbers.add(n));
+    } else if (Array.isArray(obj)) {
+      obj.forEach(item => extractAllNumbers(item));
+    } else if (typeof obj === 'object') {
+      Object.values(obj).forEach(val => extractAllNumbers(val));
+    }
+  };
 
-  if (evidence?.metadata?.anomaliesDetected !== undefined) numbers.add(String(evidence.metadata.anomaliesDetected));
-  if (evidence?.metadata?.normalRecords !== undefined) numbers.add(String(evidence.metadata.normalRecords));
-  if (evidence?.metadata?.anomalyRate !== undefined) {
-    numbers.add(String(evidence.metadata.anomalyRate));
-    numbers.add(Number(evidence.metadata.anomalyRate).toFixed(2));
-  }
-  if (evidence?.metadata?.totalRecords !== undefined) numbers.add(String(evidence.metadata.totalRecords));
-  if (evidence?.metadata?.rowsExcluded !== undefined) numbers.add(String(evidence.metadata.rowsExcluded));
-  if (evidence?.metadata?.horizon !== undefined) numbers.add(String(evidence.metadata.horizon));
-  if (evidence?.metadata?.historicalPeriods !== undefined) numbers.add(String(evidence.metadata.historicalPeriods));
-  if (evidence?.metadata?.latestHistoricalValue !== undefined) numbers.add(String(evidence.metadata.latestHistoricalValue));
-  if (evidence?.metadata?.firstForecastValue !== undefined) numbers.add(String(evidence.metadata.firstForecastValue));
-  if (evidence?.metadata?.finalForecastValue !== undefined) numbers.add(String(evidence.metadata.finalForecastValue));
-  if (evidence?.metadata?.overallChangePercent !== undefined) {
-    numbers.add(String(evidence.metadata.overallChangePercent));
-    numbers.add(Math.abs(evidence.metadata.overallChangePercent).toString());
-  }
-  if (evidence?.metadata?.backtestMetrics) {
-    const bm = evidence.metadata.backtestMetrics;
-    if (bm.mae !== undefined) numbers.add(String(bm.mae));
-    if (bm.rmse !== undefined) numbers.add(String(bm.rmse));
-    if (bm.mape !== undefined && bm.mape !== null) numbers.add(String(bm.mape));
-    if (bm.validationPeriods !== undefined) numbers.add(String(bm.validationPeriods));
-    if (bm.trainingPeriods !== undefined) numbers.add(String(bm.trainingPeriods));
-    if (bm.zeroActualsExcluded !== undefined) numbers.add(String(bm.zeroActualsExcluded));
-  }
-
-  if (evidence?.metadata?.targetValue !== undefined) numbers.add(String(evidence.metadata.targetValue));
-  if (evidence?.metadata?.comparisonValue !== undefined) numbers.add(String(evidence.metadata.comparisonValue));
-  if (evidence?.metadata?.targetPeriod) {
-    const tNums = String(evidence.metadata.targetPeriod).match(/\d+/g);
-    if (tNums) tNums.forEach(n => numbers.add(n));
-  }
-  if (evidence?.metadata?.comparisonPeriod) {
-    const cNums = String(evidence.metadata.comparisonPeriod).match(/\d+/g);
-    if (cNums) cNums.forEach(n => numbers.add(n));
-  }
-  if (evidence?.metadata?.absoluteChange !== undefined) {
-    numbers.add(String(evidence.metadata.absoluteChange));
-    numbers.add(Math.abs(evidence.metadata.absoluteChange).toString());
-  }
-  if (Array.isArray(evidence?.metadata?.topContributors)) {
-    evidence.metadata.topContributors.forEach(tc => {
-      if (tc.absoluteChange !== undefined) {
-        numbers.add(String(tc.absoluteChange));
-        numbers.add(Math.abs(tc.absoluteChange).toString());
-      }
-      if (tc.growthPercent !== undefined) numbers.add(String(tc.growthPercent));
-      if (tc.contributionPercent !== undefined) {
-        numbers.add(String(tc.contributionPercent));
-        numbers.add(Math.abs(tc.contributionPercent).toString());
-      }
-    });
-  }
-  if (evidence?.metadata?.anomalyEvidence?.anomaliesDetected !== undefined) {
-    numbers.add(String(evidence.metadata.anomalyEvidence.anomaliesDetected));
-  }
+  extractAllNumbers(evidence?.metadata);
 
   if (Array.isArray(evidence?.result)) {
     evidence.result.forEach(row => {
-      Object.values(row).forEach(val => {
-        if (typeof val === 'number') {
-          numbers.add(String(val));
-          numbers.add(val.toString());
-          numbers.add(val.toLocaleString('en-US'));
-          numbers.add(val.toLocaleString());
-          numbers.add(Math.abs(val).toString());
-          if (Number.isInteger(val)) {
-            numbers.add(String(val));
-          } else {
-            numbers.add(val.toFixed(2));
-            numbers.add(val.toFixed(4));
-            numbers.add(Math.abs(val).toFixed(2));
-          }
-        } else if (typeof val === 'string') {
-          // Extract year numbers or numbers inside strings like dates or '2026-10'
-          const numMatches = val.match(/\d+/g);
-          if (numMatches) numMatches.forEach(n => numbers.add(n));
-        }
-      });
-    });
-  }
-
-  if (Array.isArray(evidence?.metadata?.targetFactors)) {
-    evidence.metadata.targetFactors.forEach(tf => {
-      if (tf.rawR !== undefined) {
-        numbers.add(String(tf.rawR));
-        numbers.add(Math.abs(tf.rawR).toString());
-        numbers.add(Number(tf.rawR).toFixed(2));
-      }
-      if (tf.observations !== undefined) numbers.add(String(tf.observations));
-      if (tf.missingPairsExcluded !== undefined) numbers.add(String(tf.missingPairsExcluded));
+      Object.values(row).forEach(val => extractAllNumbers(val));
     });
   }
 
@@ -184,12 +100,21 @@ function generateDeterministicExplanation(evidence) {
   const plan = evidence.plan || {};
   const operation = (plan.operation || evidence.operation || '').toLowerCase();
 
-  if (result.length === 0) {
-    return `No matching records were found for ${question} across ${rowsCount} analyzed rows.`;
+  const firstRow = result[0] || {};
+  const keys = Object.keys(firstRow);
+
+  // Select Operation Result (Listing Column Values)
+  if (operation === 'select') {
+    const colName = metadata.column || plan.column || keys[0] || 'Order_ID';
+    const valuesList = result.map(r => r[colName]).filter(v => v !== undefined && v !== null).slice(0, 10).join(', ');
+    return `Displaying values for '${colName}' (${result.length} record(s) retrieved out of ${rowsCount} analyzed rows): ${valuesList}${result.length > 10 ? ', ...' : '.'}`;
   }
 
-  const firstRow = result[0];
-  const keys = Object.keys(firstRow);
+  // Schema Info Result (Dataset Columns)
+  if (operation === 'schema_info') {
+    const cols = (result || []).map(c => `${c.name} (${c.type})`).join(', ');
+    return `Dataset Schema Information: The dataset contains ${result.length} columns: ${cols}.`;
+  }
 
   // Phase 13 Automated Insight & Root-Cause Result
   if (operation === 'insight_analysis') {
@@ -221,6 +146,43 @@ function generateDeterministicExplanation(evidence) {
     exp += ` Note: Group-wise contribution analysis identifies associated statistical changes across sub-groups; it does not prove direct causality.`;
 
     return exp;
+  }
+
+  // Phase 15 Executive Summary Result
+  if (operation === 'executive_summary') {
+    const rows = metadata.totalRows || rowsCount || 0;
+    const cols = metadata.totalCols || 0;
+    const quality = metadata.dataQualityStatus || 'CLEAN';
+    const outliers = metadata.totalIQRAnomalies || 0;
+    const trend = metadata.trendSummary || 'Not available from the current analysis.';
+    const corr = metadata.correlationSummary || 'Not available from the current analysis.';
+    const fc = metadata.forecastSummary || 'Not available from the current analysis.';
+
+    return `Executive Summary: The dataset comprises ${rows} records across ${cols} schema columns. Overall Data Quality Status is ${quality}. A total of ${outliers} IQR statistical outlier record(s) were identified. Trend Analysis: ${trend}. Correlation Analysis: ${corr}. Forecasting Insight: ${fc}. Deterministic calculated findings have been verified directly from the dataset.`;
+  }
+
+  // Phase 15 Complete Analysis Report Result
+  if (operation === 'complete_report' || operation === 'analysis_report') {
+    const rows = metadata.totalRows || rowsCount || 0;
+    const cols = metadata.totalCols || 0;
+    const quality = metadata.dataQualityStatus || 'CLEAN';
+    const outliers = metadata.totalIQRAnomalies || 0;
+    const trend = metadata.trendSummary || 'Not available from the current analysis.';
+    const corr = metadata.correlationSummary || 'Not available from the current analysis.';
+    const fc = metadata.forecastSummary || 'Not available from the current analysis.';
+
+    return `Complete Analysis Report: Ingested dataset contains ${rows} records and ${cols} columns. Data Quality Status is evaluated as ${quality}. A total of ${outliers} IQR statistical outlier record(s) were identified. Trend Analysis: ${trend}. Correlation Analysis: ${corr}. Forecasting Insight: ${fc}. All calculated findings represent deterministic Phase 1-14 evidence and are fully traceable.`;
+  }
+
+  // Phase 15 Regional Analysis Result
+  if (operation === 'regional_analysis') {
+    const focusReg = metadata.focusRegion || 'Target Region';
+    const focusSales = metadata.focusRegionSales !== undefined ? formatNumberUS(metadata.focusRegionSales) : 'N/A';
+    const focusShare = metadata.focusRegionShare !== undefined ? metadata.focusRegionShare : 'N/A';
+    const reason = metadata.reasonForFocus || `Prioritize operational audit on ${focusReg} region.`;
+    const totalSystem = metadata.totalSystemSales !== undefined ? formatNumberUS(metadata.totalSystemSales) : 'N/A';
+
+    return `Regional Performance Analysis: Total system revenue across all regions is ${totalSystem}. Based on comparative metric evidence, ${focusReg} region is identified as the primary operational segment requiring attention (${focusSales} total sales, ${focusShare}% market share). ${reason} Regional selection is grounded in empirical sales share and period-over-period metric variance.`;
   }
 
   // 0. Forecasting Result (Phase 12)

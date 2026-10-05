@@ -20,7 +20,7 @@ Your job is to translate a user's natural language question or follow-up into a 
 CRITICAL RULES:
 1. You are NOT the calculation engine. DO NOT return numerical answers or guessed figures.
 2. Only reference column names that EXACTLY exist in the provided schema. DO NOT invent columns.
-3. Supported operations: count, sum, average, median, min, max, group_aggregate, sort, filter, top_n, bottom_n, time_group, describe, correlation, correlation_matrix, anomaly_detection, forecast, insight_analysis.
+3. Supported operations: count, sum, average, median, min, max, group_aggregate, sort, filter, top_n, bottom_n, time_group, describe, correlation, correlation_matrix, anomaly_detection, forecast, insight_analysis, executive_summary.
 4. Allowed aggregations: sum, average, median, min, max, count.
 5. If the question asks for correlation, relationship, or association between two numeric columns (e.g., "Is sales related to quantity?", "What is the correlation between sales and quantity?"), set operation to "correlation" and measures to an array of the two numeric column names, e.g. ["Sales", "Quantity"].
 6. If the question asks for results grouped or broken down by time or date (e.g., "by month", "monthly", "by year", "yearly", "trend", "over time", "by date", "per month", "by quarter"), you MUST return operation: "time_group". Set column to the date/datetime column name, measure to the target numerical measure column (e.g. Sales, Revenue), timeUnit to "month", "year", "day", or "quarter", and aggregation to the requested aggregation function (default "sum").
@@ -193,6 +193,53 @@ function findColumnInQuery(columns, question) {
   return findColumnInQueryDetails(columns, question).col;
 }
 
+function extractFiltersFromQuery(question, schemaColumns) {
+  const q = question.toLowerCase();
+  const filters = [];
+
+  const catCols = (schemaColumns || []).filter(c => 
+    (c.type === 'categorical' || c.type === 'text' || c.name.toLowerCase().includes('region') || c.name.toLowerCase().includes('category') || c.name.toLowerCase().includes('segment')) && 
+    c.semanticType !== 'identifier' && !isIdColumn(c.name)
+  );
+
+  // 1. Check known categorical values
+  const knownRegionValues = ['south', 'north', 'east', 'west', 'central', 'pacific', 'atlantic'];
+  const regionCol = (schemaColumns || []).find(c => c.name.toLowerCase().includes('region')) || catCols[0];
+
+  if (regionCol) {
+    for (const val of knownRegionValues) {
+      const regExp = new RegExp(`\\b${val}\\b`, 'i');
+      if (regExp.test(question)) {
+        filters.push({
+          column: regionCol.name,
+          operator: '=',
+          value: val.charAt(0).toUpperCase() + val.slice(1)
+        });
+        break;
+      }
+    }
+  }
+
+  // 2. Generic pattern matching
+  if (filters.length === 0) {
+    const pattern = /(?:for|in|where|of|from)\s+(?:the\s+)?([A-Za-z0-9_\-]+)\s*(?:region|category|segment|department|branch|type)?/i;
+    const match = question.match(pattern);
+    if (match && match[1]) {
+      const valCandidate = match[1].trim();
+      const ignoreWords = ['the', 'a', 'an', 'each', 'every', 'all', 'by', 'monthly', 'yearly', 'sales', 'quantity', 'total', 'average', 'highest', 'lowest', 'next', 'what', 'show'];
+      if (!ignoreWords.includes(valCandidate.toLowerCase()) && valCandidate.length > 1) {
+        const targetCat = catCols.find(c => ['region', 'category', 'segment', 'type'].some(k => c.name.toLowerCase().includes(k))) || catCols[0];
+        if (targetCat) {
+          const formattedVal = valCandidate.charAt(0).toUpperCase() + valCandidate.slice(1);
+          filters.push({ column: targetCat.name, operator: '=', value: formattedVal });
+        }
+      }
+    }
+  }
+
+  return filters;
+}
+
 function heuristicFallbackPlanner(question, schemaColumns, context = null) {
   const q = question.toLowerCase();
   const normQ = normalizeText(question);
@@ -201,6 +248,86 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
   const prevMeasure = prevPlan?.measure || null;
   const prevGroupBy = prevPlan?.groupBy || null;
   const prevLimit = prevPlan?.limit || null;
+
+  // Schema / Column metadata queries ("What columns are present in this dataset?", "List columns", "Show dataset schema")
+  const schemaKeywords = [
+    'what columns are present',
+    'what columns are in',
+    'list columns',
+    'show columns',
+    'what fields',
+    'dataset schema',
+    'show schema',
+    'list fields',
+    'available columns',
+    'column names',
+    'columns in this dataset',
+    'columns present'
+  ];
+
+  if (schemaKeywords.some(k => q.includes(k))) {
+    return {
+      status: 'success',
+      plan: {
+        operation: 'schema_info'
+      }
+    };
+  }
+
+  // Extract explicit filters from query
+  const extractedFilters = extractFiltersFromQuery(question, schemaColumns);
+
+  // Phase 15 Complete Analysis Report Handler ("Generate a complete analysis report", "Complete analysis report", "Generate a report")
+  const reportKeywords = [
+    'complete analysis report',
+    'generate a complete analysis report',
+    'generate a report',
+    'full analysis report',
+    'generate report',
+    'dataset report',
+    'create a report',
+    'create analysis report',
+    'complete report'
+  ];
+
+  if (reportKeywords.some(k => q.includes(k))) {
+    return {
+      status: 'success',
+      plan: {
+        operation: 'complete_report'
+      }
+    };
+  }
+
+  // Phase 15 Executive Summary Query Handler ("Give me an executive summary", "Summarize the dataset", "What are the key insights?", "Give me an overall analysis")
+  const execSummaryKeywords = [
+    'executive summary',
+    'summarize the dataset',
+    'summarize dataset',
+    'summary of the data',
+    'summary of data',
+    'key insights',
+    'overall analysis',
+    'summarize the findings',
+    'business summary',
+    'dataset summary',
+    'data summary',
+    'overview of the dataset',
+    'overview of dataset',
+    'summarize findings',
+    'give me an executive summary',
+    'give me a summary'
+  ];
+
+  const isExecutiveSummaryQuery = execSummaryKeywords.some(k => q.includes(k));
+  if (isExecutiveSummaryQuery) {
+    return {
+      status: 'success',
+      plan: {
+        operation: 'executive_summary'
+      }
+    };
+  }
 
   const isIdentifier = (c) => c.semanticType === 'identifier' || isIdColumn(c.name);
 
@@ -218,6 +345,98 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
   const numMatch = findColumnInQueryDetails(numericCols, question);
   const catMatch = findColumnInQueryDetails(catCols, question);
   const dateMatch = findColumnInQueryDetails(dateCols, question);
+
+  // Phase 15 Test 6: Regional Performance & Focus Recommendation Handler ("Which region should I focus on based on the analysis?", "Which region to prioritize?")
+  const regionalFocusKeywords = [
+    'which region should i focus on',
+    'which region to focus on',
+    'which region should i prioritize',
+    'which region to prioritize',
+    'region recommendation',
+    'which region is performing poorly',
+    'which region needs attention',
+    'focus region',
+    'regional focus',
+    'region focus'
+  ];
+  if (regionalFocusKeywords.some(k => q.includes(k))) {
+    const regionCol = catCols.find(c => c.name.toLowerCase().includes('region')) || catCols[0] || { name: 'Region' };
+    const measureCol = numMatch.col || numericCols.find(c => c.name.toLowerCase().includes('sales') || c.name.toLowerCase().includes('revenue')) || numericCols[0] || { name: 'Sales' };
+    const dateCol = dateMatch.col || dateCols[0];
+    return {
+      status: 'success',
+      plan: {
+        operation: 'regional_analysis',
+        groupBy: regionCol.name,
+        group_by: regionCol.name,
+        measure: measureCol.name,
+        target: measureCol.name,
+        date_column: dateCol ? dateCol.name : null,
+        dateColumn: dateCol ? dateCol.name : null,
+        isRegionalFocus: true
+      }
+    };
+  }
+
+  // Phase 15 Test 2: Actionable Trend Recommendation Handler ("What should I do about the sales trend?", "Actions for sales trend")
+  const trendRecKeywords = [
+    'what should i do about the sales trend',
+    'what should i do about the trend',
+    'what should i do about trend',
+    'actions for sales trend',
+    'actions for trend',
+    'trend recommendation',
+    'recommendation for trend',
+    'what to do about the trend',
+    'what to do about sales trend'
+  ];
+  if (trendRecKeywords.some(k => q.includes(k))) {
+    const measureCol = numMatch.col || numericCols.find(c => c.name.toLowerCase().includes('sales') || c.name.toLowerCase().includes('revenue')) || numericCols[0] || { name: 'Sales' };
+    const dateCol = dateMatch.col || dateCols[0] || { name: 'Order_Date' };
+    return {
+      status: 'success',
+      plan: {
+        operation: 'time_series',
+        target: measureCol.name,
+        measure: measureCol.name,
+        column: dateCol.name,
+        date_column: dateCol.name,
+        dateColumn: dateCol.name,
+        granularity: 'MONTH',
+        isTrendRecommendation: true
+      }
+    };
+  }
+
+  // Phase 15 Test 3: Forecast Decision Support Handler ("What actions should I take based on the forecast?", "Forecast recommendation")
+  const forecastRecKeywords = [
+    'what actions should i take based on the forecast',
+    'actions based on the forecast',
+    'actions based on forecast',
+    'recommendation based on forecast',
+    'forecast decision support',
+    'forecast recommendation',
+    'what to do based on forecast'
+  ];
+  if (forecastRecKeywords.some(k => q.includes(k))) {
+    const measureCol = numMatch.col || numericCols.find(c => c.name.toLowerCase().includes('sales') || c.name.toLowerCase().includes('revenue')) || numericCols[0] || { name: 'Sales' };
+    const dateCol = dateMatch.col || dateCols[0] || { name: 'Order_Date' };
+    return {
+      status: 'success',
+      plan: {
+        operation: 'forecast',
+        target: measureCol.name,
+        measure: measureCol.name,
+        column: measureCol.name,
+        date_column: dateCol.name,
+        dateColumn: dateCol.name,
+        granularity: 'MONTH',
+        horizon: 3,
+        method: 'linear_regression',
+        isForecastDecisionSupport: true
+      }
+    };
+  }
 
   const maxNonIdScore = Math.max(numMatch.score, catMatch.score, dateMatch.score);
   const matchedId = idMatch.score > 0 && (idMatch.score >= maxNonIdScore || q.includes('order_id') || q.includes('customer_id') || q.includes('user_id') || q.includes(' id') || q.includes('order id')) ? idMatch.col : null;
@@ -439,13 +658,28 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
   // Handle explicit queries on identifier columns (e.g. Order_ID)
   if (matchedId) {
     const isCountQuery = q.includes('how many') || q.includes('count') || q.includes('unique') || q.includes('number of');
+    const isAnalyticsQuery = q.includes('total') || q.includes('sum') || q.includes('average') || q.includes('avg') || q.includes('mean') || q.includes('median') || q.includes('min') || q.includes('max') || q.includes('trend') || q.includes('forecast') || q.includes('predict') || q.includes('correlation') || q.includes('anomaly') || q.includes('over time') || q.includes('by month') || q.includes('by year') || q.includes('by date');
+    const isShowQuery = !isAnalyticsQuery && (q.includes('show') || q.includes('list') || q.includes('display') || q.includes('view') || q.includes('values') || q.includes('select') || q.includes('get'));
+
     if (isCountQuery) {
       return {
         status: 'success',
         plan: {
           operation: 'count',
           measure: matchedId.name,
-          column: matchedId.name
+          column: matchedId.name,
+          filters: extractedFilters
+        }
+      };
+    } else if (isShowQuery) {
+      return {
+        status: 'success',
+        plan: {
+          operation: 'select',
+          column: matchedId.name,
+          measure: matchedId.name,
+          limit: 50,
+          filters: extractedFilters
         }
       };
     } else {
@@ -505,7 +739,30 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
       };
     }
 
-    // 2. Check for requested non-existent column (e.g. Profit, Revenue)
+    // 2. Check if query asks for correlation between specific columns and any candidate column does not exist in schema
+    const betweenMatch = question.match(/(?:correlation|relationship|association)\s+(?:between|of|for)?\s+(.+?)\s+and\s+(.+?)(\?|!|\.|$)/i);
+    if (betweenMatch) {
+      const colXCandidate = betweenMatch[1].trim();
+      const colYCandidate = betweenMatch[2].trim();
+
+      const matchX = findColumnInQueryDetails(schemaColumns, colXCandidate);
+      const matchY = findColumnInQueryDetails(schemaColumns, colYCandidate);
+
+      if (matchX.score === 0) {
+        return {
+          status: 'cannot_answer',
+          reason: `Column '${colXCandidate}' does not exist in the dataset schema.`
+        };
+      }
+      if (matchY.score === 0) {
+        return {
+          status: 'cannot_answer',
+          reason: `Column '${colYCandidate}' does not exist in the dataset schema.`
+        };
+      }
+    }
+
+    // Check for requested non-existent column (e.g. Profit, Revenue)
     if (q.includes('profit') && !schemaColumns.some(c => c.name.toLowerCase().includes('profit'))) {
       return {
         status: 'cannot_answer',
@@ -768,7 +1025,8 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
     else if (q.includes('count') || q.includes('how many')) agg = 'count';
 
     // Grouped trend check (e.g. "by Region", "for each Product")
-    const groupByCol = matchedCat ? matchedCat.name : null;
+    const filterCols = extractedFilters.map(f => f.column.toLowerCase());
+    const groupByCol = matchedCat && !filterCols.includes(matchedCat.name.toLowerCase()) ? matchedCat.name : null;
 
     return {
       status: 'success',
@@ -780,7 +1038,21 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
         aggregation: agg,
         granularity: granularity,
         timeUnit: timeUnit,
-        groupBy: groupByCol
+        groupBy: groupByCol,
+        filters: extractedFilters
+      }
+    };
+  }
+
+  // Filtered aggregation check (e.g. "Show sales for the South region")
+  if (extractedFilters.length > 0 && (matchedNumeric || activeMeasure)) {
+    return {
+      status: 'success',
+      plan: {
+        operation: 'sum',
+        measure: activeMeasure,
+        aggregation: 'sum',
+        filters: extractedFilters
       }
     };
   }

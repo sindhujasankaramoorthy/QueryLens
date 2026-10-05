@@ -1,4 +1,5 @@
 import React from 'react';
+import DecisionSupport from './DecisionSupport';
 import {
   ResponsiveContainer,
   LineChart,
@@ -54,6 +55,9 @@ export default function ResultVisualization({ execution, validation, question, t
   const isAnomalyDetection = operation === 'anomaly_detection';
   const isForecast = operation === 'forecast';
   const isInsightAnalysis = operation === 'insight_analysis';
+  const isExecutiveSummary = operation === 'executive_summary';
+  const isCompleteReport = operation === 'complete_report' || operation === 'analysis_report';
+  const isRegionalAnalysis = operation === 'regional_analysis';
 
   const colX = metadata.columnX || firstRow.columnX;
   const colY = metadata.columnY || firstRow.columnY;
@@ -68,7 +72,7 @@ export default function ResultVisualization({ execution, validation, question, t
   const scatterColX = colX || (metadata.topPair ? metadata.topPair.columnX : 'Variable X');
   const scatterColY = colY || (metadata.topPair ? metadata.topPair.columnY : 'Variable Y');
 
-  const isTimeSeries = !isCorrelation && !isCorrelationMatrix && !isForecast && !isInsightAnalysis && (operation === 'time_series' || operation === 'time_group' || Boolean(metadata?.dateColumn) || Boolean(validation?.plan?.granularity) || Boolean(validation?.plan?.timeUnit));
+  const isTimeSeries = !isCorrelation && !isCorrelationMatrix && !isForecast && !isInsightAnalysis && !isExecutiveSummary && (operation === 'time_series' || operation === 'time_group' || Boolean(metadata?.dateColumn) || Boolean(validation?.plan?.granularity) || Boolean(validation?.plan?.timeUnit));
 
   // Auto detect xKey and yKey for non-correlation charts
   let xKey = metadata?.dateColumn || validation?.plan?.date_column || validation?.plan?.column || validation?.plan?.groupBy;
@@ -91,8 +95,8 @@ export default function ResultVisualization({ execution, validation, question, t
     yKey = keys.find(k => k !== xKey && k !== 'Growth (%)' && typeof firstRow[k] === 'number') || keys.find(k => typeof firstRow[k] === 'number');
   }
 
-  const isScalar = !isCorrelation && !isCorrelationMatrix && !isTimeSeries && !isForecast && resultData.length === 1 && (keys.length === 1 || ['count', 'sum', 'average', 'median', 'min', 'max', 'describe'].includes(operation));
-  const shouldChart = !isScalar && !isCorrelation && !isCorrelationMatrix && !isForecast && resultData.length > 1 && Boolean(yKey);
+  const isScalar = !isCorrelation && !isCorrelationMatrix && !isTimeSeries && !isForecast && !isExecutiveSummary && resultData.length === 1 && (keys.length === 1 || ['count', 'sum', 'average', 'median', 'min', 'max', 'describe'].includes(operation));
+  const shouldChart = !isScalar && !isCorrelation && !isCorrelationMatrix && !isForecast && !isExecutiveSummary && resultData.length > 1 && Boolean(yKey);
 
   // Theme-aware color variables for Recharts
   const isDark = theme === 'dark';
@@ -1303,7 +1307,239 @@ export default function ResultVisualization({ execution, validation, question, t
           </div>
         </div>
       )}
+
+      {/* 6. Executive Summary Dedicated View (Phase 15) */}
+      {isExecutiveSummary && (
+        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.5rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <Layers size={22} style={{ color: 'var(--primary)' }} />
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                Executive Summary (Dataset-Level Analytics)
+              </h3>
+            </div>
+            <span style={{ padding: '0.3rem 0.75rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 700, background: metadata.dataQualityStatus === 'CLEAN' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)', color: metadata.dataQualityStatus === 'CLEAN' ? 'var(--accent-emerald)' : 'var(--accent-amber)', border: '1px solid currentColor' }}>
+              Data Quality: {metadata.dataQualityStatus || 'CLEAN'}
+            </span>
+          </div>
+
+          {/* Dataset Overview Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.15)', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total Rows Analyzed</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.totalRows)}</div>
+            </div>
+            <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.15)', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Schema Columns</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.totalCols)}</div>
+            </div>
+            <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.15)', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Missing Values</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: metadata.missingCells > 0 ? 'var(--accent-amber)' : 'var(--accent-emerald)', fontFamily: 'var(--font-mono)' }}>{metadata.missingCells || 0} ({metadata.missingPercent || 0}%)</div>
+            </div>
+            <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.15)', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>IQR Statistical Outliers</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: metadata.totalIQRAnomalies > 0 ? 'var(--accent-cyan)' : 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{metadata.totalIQRAnomalies || 0}</div>
+            </div>
+          </div>
+
+          {/* Analytical Findings Section */}
+          <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', padding: '1.25rem', border: '1px solid var(--border-color)', marginBottom: '1.25rem' }}>
+            <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Deterministic Analytical Findings
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.85rem', fontSize: '0.88rem' }}>
+              <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(0,0,0,0.1)', border: '1px solid var(--border-color)' }}>
+                <strong>Data Quality Status: </strong>
+                <span>{metadata.dataQualityMessage || 'Dataset is clean.'}</span>
+              </div>
+              <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(0,0,0,0.1)', border: '1px solid var(--border-color)' }}>
+                <strong>Important Trend: </strong>
+                <span>{metadata.trendSummary || 'Not available from the current analysis.'}</span>
+              </div>
+              <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(0,0,0,0.1)', border: '1px solid var(--border-color)' }}>
+                <strong>Important Correlation: </strong>
+                <span>{metadata.correlationSummary || 'Not available from the current analysis.'}</span>
+              </div>
+              <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(0,0,0,0.1)', border: '1px solid var(--border-color)' }}>
+                <strong>Statistical Outliers: </strong>
+                <span>{metadata.totalIQRAnomalies || 0} outlier(s) detected using 1.5x IQR bounds across numeric features.</span>
+              </div>
+              <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(0,0,0,0.1)', border: '1px solid var(--border-color)' }}>
+                <strong>Forecasting Insight: </strong>
+                <span>{metadata.forecastSummary || 'Not available from the current analysis.'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Major Statistical Findings Table if stats exist */}
+          {metadata.stats && Object.keys(metadata.stats).length > 0 && (
+            <div style={{ marginBottom: '1.25rem' }}>
+              <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Major Statistical Findings (Numeric Measures)
+              </h4>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(0, 0, 0, 0.2)', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '0.6rem 0.8rem', textAlign: 'left', borderBottom: '1px solid var(--border-color)' }}>Measure Column</th>
+                      <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right', borderBottom: '1px solid var(--border-color)' }}>Count</th>
+                      <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right', borderBottom: '1px solid var(--border-color)' }}>Min</th>
+                      <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right', borderBottom: '1px solid var(--border-color)' }}>Max</th>
+                      <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right', borderBottom: '1px solid var(--border-color)' }}>Mean</th>
+                      <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right', borderBottom: '1px solid var(--border-color)' }}>Median</th>
+                      <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right', borderBottom: '1px solid var(--border-color)' }}>IQR Outliers</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(metadata.stats).map(([colName, colStat], idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '0.6rem 0.8rem', fontWeight: 700, color: 'var(--text-main)' }}>{colName}</td>
+                        <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatValue(colStat.count)}</td>
+                        <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatValue(colStat.min)}</td>
+                        <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatValue(colStat.max)}</td>
+                        <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatValue(colStat.mean)}</td>
+                        <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatValue(colStat.median)}</td>
+                        <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: colStat.iqrOutliers > 0 ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>{colStat.iqrOutliers}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Traceability Footer */}
+          <div style={{ padding: '0.6rem 0.85rem', borderRadius: '6px', background: 'rgba(0, 0, 0, 0.25)', border: '1px dashed var(--border-color)', fontSize: '0.76rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <span><strong>Calculated Findings:</strong> Ingested Dataset Profile & Phase 3 SVG Execution Engine</span>
+            <span><strong>AI Explanation:</strong> Grounded Natural-Language Interpretation</span>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Complete Analysis Report Dedicated View (Phase 15) */}
+      {isCompleteReport && (
+        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.5rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <Calculator size={22} style={{ color: 'var(--primary)' }} />
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                Complete Analysis Report (Multi-Phase Evidence)
+              </h3>
+            </div>
+            <span style={{ padding: '0.3rem 0.75rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 700, background: 'rgba(139, 92, 246, 0.15)', color: 'var(--accent-violet)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+              Report Status: Complete
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.15)', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Rows Analyzed</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.totalRows)}</div>
+            </div>
+            <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.15)', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Columns Ingested</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.totalCols)}</div>
+            </div>
+            <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.15)', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Quality Status</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: metadata.dataQualityStatus === 'CLEAN' ? 'var(--accent-emerald)' : 'var(--accent-amber)', fontFamily: 'var(--font-mono)' }}>{metadata.dataQualityStatus || 'CLEAN'}</div>
+            </div>
+            <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.15)', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>IQR Outliers</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: metadata.totalIQRAnomalies > 0 ? 'var(--accent-cyan)' : 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{metadata.totalIQRAnomalies || 0}</div>
+            </div>
+          </div>
+
+          <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', padding: '1.25rem', border: '1px solid var(--border-color)' }}>
+            <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase' }}>
+              Phase-by-Phase Executive Summary
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.85rem', fontSize: '0.88rem' }}>
+              <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(0,0,0,0.1)', border: '1px solid var(--border-color)' }}>
+                <strong>Data Quality: </strong><span>{metadata.dataQualityMessage || 'Clean dataset.'}</span>
+              </div>
+              <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(0,0,0,0.1)', border: '1px solid var(--border-color)' }}>
+                <strong>Trend Analysis: </strong><span>{metadata.trendSummary || 'N/A'}</span>
+              </div>
+              <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(0,0,0,0.1)', border: '1px solid var(--border-color)' }}>
+                <strong>Correlation Analysis: </strong><span>{metadata.correlationSummary || 'N/A'}</span>
+              </div>
+              <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(0,0,0,0.1)', border: '1px solid var(--border-color)' }}>
+                <strong>Forecasting Projection: </strong><span>{metadata.forecastSummary || 'N/A'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 8. Regional Focus Recommendation Dedicated View (Phase 15) */}
+      {isRegionalAnalysis && (
+        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.5rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <BarChart3 size={22} style={{ color: 'var(--accent-amber)' }} />
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                Regional Performance Comparison & Priority Focus
+              </h3>
+            </div>
+            <span style={{ padding: '0.3rem 0.75rem', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 700, background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent-amber)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              Focus Region: {metadata.focusRegion || 'N/A'}
+            </span>
+          </div>
+
+          <div style={{ padding: '1rem 1.25rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', marginBottom: '1.25rem' }}>
+            <strong style={{ color: 'var(--accent-amber)', fontSize: '0.9rem', display: 'block', marginBottom: '0.35rem' }}>
+              Priority Recommendation Rationale:
+            </strong>
+            <span style={{ fontSize: '0.86rem', color: 'var(--text-main)' }}>
+              {metadata.reasonForFocus || `Prioritize operational audit and resource allocation on ${metadata.focusRegion} region.`}
+            </span>
+          </div>
+
+          {Array.isArray(resultData) && resultData.length > 0 && (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(0, 0, 0, 0.2)', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                    <th style={{ padding: '0.6rem 0.8rem', textAlign: 'left', borderBottom: '1px solid var(--border-color)' }}>Region</th>
+                    <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right', borderBottom: '1px solid var(--border-color)' }}>Total Sales</th>
+                    <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right', borderBottom: '1px solid var(--border-color)' }}>Mean Sales</th>
+                    <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right', borderBottom: '1px solid var(--border-color)' }}>Order Count</th>
+                    <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right', borderBottom: '1px solid var(--border-color)' }}>Market Share (%)</th>
+                    <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right', borderBottom: '1px solid var(--border-color)' }}>Recent Change (%)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resultData.map((row, idx) => {
+                    const isFocus = row.Region === metadata.focusRegion;
+                    return (
+                      <tr key={idx} style={{ background: isFocus ? 'rgba(245, 158, 11, 0.1)' : 'transparent', borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '0.6rem 0.8rem', fontWeight: isFocus ? 800 : 600, color: isFocus ? 'var(--accent-amber)' : 'var(--text-main)' }}>
+                          {row.Region} {isFocus && '(Focus Priority)'}
+                        </td>
+                        <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatValue(row.TotalSales)}</td>
+                        <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatValue(row.MeanSales)}</td>
+                        <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{formatValue(row.OrderCount)}</td>
+                        <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{row.SharePercent}%</td>
+                        <td style={{ padding: '0.6rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: row.RecentChangePercent < 0 ? 'var(--accent-rose)' : 'var(--accent-emerald)' }}>
+                          {row.RecentChangePercent >= 0 ? '+' : ''}{row.RecentChangePercent}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 9. Phase 15 Decision Support & Evidence-Based Recommendations */}
+      <DecisionSupport decisionSupport={execution.decisionSupport} />
     </div>
   );
 }
+
+
 

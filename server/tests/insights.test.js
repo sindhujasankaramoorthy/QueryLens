@@ -1,10 +1,25 @@
+const assert = require('assert');
 const { heuristicFallbackPlanner } = require('../src/services/llmPlanner');
 const { validateAnalysisPlan } = require('../src/services/planValidator');
 const { executeAnalysisPlan } = require('../src/services/analysisEngine');
 const { generateExplanation } = require('../src/services/llmExplainer');
 const { profileDataset } = require('../src/services/profiler');
 
-describe('Phase 13 — Automated Insight & Evidence-Based Root-Cause Analysis Tests', () => {
+async function runInsightsTests() {
+  console.log('\n--- RUNNING PSA01 PHASE 13 INSIGHTS & ROOT-CAUSE TEST SUITE ---');
+  let passedCount = 0;
+  let totalCount = 0;
+
+  function assertTrue(cond, msg) {
+    totalCount++;
+    if (cond) {
+      console.log(`✓ PASS: ${msg}`);
+      passedCount++;
+    } else {
+      console.error(`✕ FAIL: ${msg}`);
+      throw new Error(`Test failed: ${msg}`);
+    }
+  }
 
   const mockDataset = [
     { Order_ID: 1001, Order_Date: '2026-09-15', Region: 'South', Category: 'Electronics', Sales: 500000, Quantity: 50, Customer_Rating: 4.5 },
@@ -23,74 +38,91 @@ describe('Phase 13 — Automated Insight & Evidence-Based Root-Cause Analysis Te
     return res.plan || res;
   }
 
-  test('TEST 1: Why did sales decrease in October 2026?', async () => {
+  // TEST 1
+  {
     const question = 'Why did sales decrease in October 2026?';
     const plan = getPlan(question);
 
-    expect(plan.operation).toBe('insight_analysis');
-    expect(plan.target_measure).toBe('Sales');
-    expect(plan.target_period).toBe('2026-10');
+    assertTrue(plan.operation === 'insight_analysis', 'TEST 1 - Operation is insight_analysis');
+    assertTrue(plan.target_measure === 'Sales', 'TEST 1 - Target measure is Sales');
+    assertTrue(plan.target_period === '2026-10', 'TEST 1 - Target period is 2026-10');
 
     const validation = validateAnalysisPlan(plan, profile.columns);
-    expect(validation.isValid).toBe(true);
+    assertTrue(validation.isValid === true, 'TEST 1 - Validation is valid');
 
     const execResult = executeAnalysisPlan(validation.plan, mockDataset);
-    expect(execResult.status).toBe('success');
-    expect(execResult.operation).toBe('insight_analysis');
-    expect(execResult.metadata.targetMeasure).toBe('Sales');
-    expect(execResult.metadata.targetPeriod).toBe('2026-10');
-    expect(execResult.metadata.comparisonPeriod).toBe('2026-09');
-    expect(execResult.metadata.absoluteChange).toBe(-310000); // 890,000 - 1,200,000 = -310,000
-    expect(execResult.metadata.direction).toBe('decrease');
-    expect(execResult.metadata.topContributors.length).toBeGreaterThan(0);
+    assertTrue(execResult.status === 'success', 'TEST 1 - Engine execution success');
+    assertTrue(execResult.operation === 'insight_analysis', 'TEST 1 - Result operation is insight_analysis');
+    assertTrue(execResult.metadata.targetMeasure === 'Sales', 'TEST 1 - Metadata target measure is Sales');
+    assertTrue(execResult.metadata.targetPeriod === '2026-10', 'TEST 1 - Metadata target period is 2026-10');
+    assertTrue(execResult.metadata.comparisonPeriod === '2026-09', 'TEST 1 - Baseline comparison period resolved to 2026-09');
+    assertTrue(execResult.metadata.absoluteChange === -310000, 'TEST 1 - Net change calculated as -310,000');
+    assertTrue(execResult.metadata.direction === 'decrease', 'TEST 1 - Direction is decrease');
+    assertTrue(execResult.metadata.topContributors.length > 0, 'TEST 1 - Top contributors generated');
 
     const explanation = await generateExplanation({ ...execResult, question, plan: validation.plan }, { forceFallback: true });
-    expect(explanation).toContain('Sales');
-    expect(explanation).not.toContain('caused');
-  });
+    assertTrue(explanation.includes('Sales'), 'TEST 1 - Explanation mentions Sales');
+    assertTrue(!explanation.includes('caused'), 'TEST 1 - Explanation adheres to non-causal rules');
+  }
 
-  test('TEST 2: What factors contributed to the increase in sales?', async () => {
+  // TEST 2
+  {
     const question = 'What factors contributed to the increase in sales?';
     const plan = getPlan(question);
 
-    expect(plan.operation).toBe('insight_analysis');
-    expect(plan.target_measure).toBe('Sales');
+    assertTrue(plan.operation === 'insight_analysis', 'TEST 2 - Operation is insight_analysis');
+    assertTrue(plan.target_measure === 'Sales', 'TEST 2 - Target measure is Sales');
 
     const validation = validateAnalysisPlan(plan, profile.columns);
-    expect(validation.isValid).toBe(true);
-  });
+    assertTrue(validation.isValid === true, 'TEST 2 - Validation is valid');
+  }
 
-  test('TEST 3: Why is the South region performing poorly?', async () => {
+  // TEST 3
+  {
     const question = 'Why is the South region performing poorly?';
     const plan = getPlan(question);
 
-    expect(plan.operation).toBe('insight_analysis');
-    expect(plan.target_measure).toBe('Sales');
+    assertTrue(plan.operation === 'insight_analysis', 'TEST 3 - Operation is insight_analysis');
+    assertTrue(plan.target_measure === 'Sales', 'TEST 3 - Target measure is Sales');
 
     const validation = validateAnalysisPlan(plan, profile.columns);
-    expect(validation.isValid).toBe(true);
+    assertTrue(validation.isValid === true, 'TEST 3 - Validation is valid');
 
     const execResult = executeAnalysisPlan(validation.plan, mockDataset);
-    expect(execResult.status).toBe('success');
-    expect(execResult.metadata.dimensionBreakdowns).toBeDefined();
-  });
+    assertTrue(execResult.status === 'success', 'TEST 3 - Execution success');
+    assertTrue(execResult.metadata.dimensionBreakdowns !== undefined, 'TEST 3 - Dimension breakdowns defined');
+  }
 
-  test('TEST 4: Why did Order_ID decrease? (Identifier protection)', async () => {
+  // TEST 4
+  {
     const question = 'Why did Order_ID decrease?';
     const plan = getPlan(question);
 
-    expect(plan.status).toBe('cannot_answer');
-    expect(plan.reason).toContain('identifier');
-  });
+    assertTrue(plan.status === 'cannot_answer', 'TEST 4 - Rejected Order_ID insight query');
+    assertTrue(plan.reason.includes('identifier'), 'TEST 4 - Stated reason mentions identifier');
+  }
 
-  test('TEST 5: Non-causal explanation check', async () => {
+  // TEST 5
+  {
     const question = 'Explain the unusual drop in sales.';
     const plan = getPlan(question);
     const validation = validateAnalysisPlan(plan, profile.columns);
     const execResult = executeAnalysisPlan(validation.plan, mockDataset);
     const explanation = await generateExplanation({ ...execResult, question, plan: validation.plan }, { forceFallback: true });
 
-    expect(explanation).not.toContain('caused');
-    expect(explanation).not.toContain('is the reason for');
+    assertTrue(!explanation.includes('caused'), 'TEST 5 - Non-causal rule check for caused');
+    assertTrue(!explanation.includes('is the reason for'), 'TEST 5 - Non-causal rule check for is the reason for');
+  }
+
+  console.log(`\nPHASE 13 INSIGHTS & ROOT-CAUSE TEST RESULTS: ${passedCount}/${totalCount} tests passed.\n`);
+}
+
+if (require.main === module) {
+  runInsightsTests().catch(err => {
+    console.error(err);
+    process.exit(1);
   });
-});
+}
+
+module.exports = { runInsightsTests };
+

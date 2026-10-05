@@ -1,18 +1,37 @@
 import React from 'react';
 import { AlertTriangle, AlertCircle, Info, CheckCircle } from 'lucide-react';
 
-export default function QualityWarnings({ warnings }) {
+export default function QualityWarnings({ warnings, qualitySummary }) {
+  const overallStatus = qualitySummary?.overallStatus || (warnings && warnings.length > 0 ? 'WARNING' : 'CLEAN');
+
   if (!warnings || warnings.length === 0) {
+    if (overallStatus === 'WARNING') {
+      return (
+        <div className="warnings-container">
+          <h3 className="section-title">
+            <AlertTriangle size={18} style={{ color: 'var(--accent-amber)' }} />
+            Data Quality Status: WARNING
+          </h3>
+          <div className="warning-item warning" style={{ borderLeftColor: 'var(--accent-amber)' }}>
+            <AlertTriangle size={18} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
+            <div>
+              <strong style={{ color: 'var(--accent-amber)' }}>Data Quality Status: WARNING</strong> — Minor data-quality issues detected. Analysis can proceed with appropriate handling.
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="warnings-container">
         <h3 className="section-title">
           <CheckCircle size={18} style={{ color: 'var(--accent-emerald)' }} />
-          Data Quality Status
+          Data Quality Status: CLEAN
         </h3>
         <div className="warning-item info" style={{ borderLeftColor: 'var(--accent-emerald)' }}>
           <Info size={18} style={{ color: 'var(--accent-emerald)', flexShrink: 0 }} />
           <div>
-            <strong style={{ color: 'var(--accent-emerald)' }}>Clean Dataset:</strong> No major data quality warnings or anomalies detected.
+            <strong style={{ color: 'var(--accent-emerald)' }}>Clean Dataset:</strong> Dataset is clean and suitable for analytical decision support.
           </div>
         </div>
       </div>
