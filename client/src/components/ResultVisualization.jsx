@@ -10,14 +10,16 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  CartesianGrid
+  CartesianGrid,
+  Legend
 } from 'recharts';
-import { Calculator, Layers, TrendingUp, BarChart3, ScatterChart as ScatterIcon, Activity } from 'lucide-react';
+import { Calculator, Layers, TrendingUp, BarChart3, ScatterChart as ScatterIcon, Activity, AlertTriangle, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
 
 /**
  * Format numbers cleanly (e.g. currency/thousands formatting)
  */
 function formatValue(val) {
+  if (val === null || val === undefined) return '—';
   if (typeof val === 'number') {
     return Number.isInteger(val) ? val.toLocaleString() : val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
   }
@@ -43,34 +45,35 @@ export default function ResultVisualization({ execution, validation, question, t
   const metadata = execution.metadata || {};
   const operation = (execution.operation || validation?.plan?.operation || 'analysis').toLowerCase();
 
-  // Determine scalar vs correlation vs chart dynamically
+  // Determine scalar vs correlation vs time series vs chart dynamically
   const firstRow = resultData[0] || {};
   const keys = Object.keys(firstRow);
 
   const isCorrelation = operation === 'correlation' || firstRow.correlation !== undefined;
+  const isTimeSeries = operation === 'time_series' || operation === 'time_group' || Boolean(metadata?.dateColumn) || Boolean(validation?.plan?.granularity) || Boolean(validation?.plan?.timeUnit);
 
   // Auto detect xKey and yKey for non-correlation charts
-  let xKey = validation?.plan?.column || validation?.plan?.groupBy;
+  let xKey = metadata?.dateColumn || validation?.plan?.date_column || validation?.plan?.column || validation?.plan?.groupBy;
   if (!xKey || !(xKey in firstRow)) {
     xKey = keys.find(k => typeof firstRow[k] !== 'number') || keys[0];
   }
 
   let yKey = null;
-  if (validation?.plan?.measure) {
-    const aggSuffix = `${validation.plan.measure}_${validation.plan.aggregation || 'sum'}`;
+  if (metadata?.measureColumn || validation?.plan?.measure) {
+    const targetM = metadata?.measureColumn || validation?.plan?.measure;
+    const aggSuffix = `${targetM}_${validation?.plan?.aggregation || 'sum'}`;
     if (aggSuffix in firstRow) {
       yKey = aggSuffix;
-    } else if (validation.plan.measure in firstRow) {
-      yKey = validation.plan.measure;
+    } else if (targetM in firstRow) {
+      yKey = targetM;
     }
   }
 
   if (!yKey || !(yKey in firstRow)) {
-    yKey = keys.find(k => k !== xKey && typeof firstRow[k] === 'number') || keys.find(k => typeof firstRow[k] === 'number');
+    yKey = keys.find(k => k !== xKey && k !== 'Growth (%)' && typeof firstRow[k] === 'number') || keys.find(k => typeof firstRow[k] === 'number');
   }
 
-  const isScalar = !isCorrelation && resultData.length === 1 && (keys.length === 1 || ['count', 'sum', 'average', 'median', 'min', 'max', 'describe'].includes(operation));
-  const isTimeGroup = operation === 'time_group' || Boolean(validation?.plan?.timeUnit);
+  const isScalar = !isCorrelation && !isTimeSeries && resultData.length === 1 && (keys.length === 1 || ['count', 'sum', 'average', 'median', 'min', 'max', 'describe'].includes(operation));
   const shouldChart = !isScalar && !isCorrelation && resultData.length > 1 && Boolean(yKey);
 
   // Theme-aware color variables for Recharts
@@ -80,6 +83,20 @@ export default function ResultVisualization({ execution, validation, question, t
   const tooltipBg = isDark ? '#0f172a' : '#ffffff';
   const tooltipBorder = isDark ? '#334155' : '#cbd5e1';
   const tooltipTextColor = isDark ? '#f8fafc' : '#0f172a';
+
+  // Distinct palette for multi-line grouped trends
+  const lineColors = ['#38bdf8', '#a855f7', '#10b981', '#f59e0b', '#ec4899', '#6366f1'];
+
+  // Trend direction badge styling
+  const trendDir = metadata.trendDirection || 'Relatively stable';
+  const trendBadgeStyle = {
+    Increasing: { bg: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', icon: ArrowUpRight, border: '1px solid rgba(16, 185, 129, 0.3)' },
+    Decreasing: { bg: 'rgba(244, 63, 94, 0.15)', color: 'var(--accent-rose)', icon: ArrowDownRight, border: '1px solid rgba(244, 63, 94, 0.3)' },
+    'Relatively stable': { bg: 'rgba(6, 182, 212, 0.15)', color: 'var(--accent-cyan)', icon: Minus, border: '1px solid rgba(6, 182, 212, 0.3)' },
+    'Insufficient data': { bg: 'rgba(148, 163, 184, 0.15)', color: 'var(--text-muted)', icon: Minus, border: '1px solid rgba(148, 163, 184, 0.3)' }
+  }[trendDir] || { bg: 'rgba(6, 182, 212, 0.15)', color: 'var(--accent-cyan)', icon: Minus, border: '1px solid rgba(6, 182, 212, 0.3)' };
+
+  const TrendIcon = trendBadgeStyle.icon;
 
   return (
     <div style={{ marginTop: '1.25rem' }}>
@@ -168,7 +185,73 @@ export default function ResultVisualization({ execution, validation, question, t
         </div>
       ) : null}
 
-      {/* 2. Scalar KPI Result Card */}
+      {/* 2. Time Series Summary Banner (Phase 9) */}
+      {isTimeSeries && (
+        <div
+          style={{
+            background: isDark ? 'linear-gradient(135deg, rgba(6, 182, 212, 0.12), rgba(56, 189, 248, 0.08))' : 'linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(56, 189, 248, 0.05))',
+            border: '1px solid rgba(6, 182, 212, 0.3)',
+            borderRadius: 'var(--radius-md)',
+            padding: '1.25rem',
+            marginBottom: '1.25rem'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <TrendingUp size={22} style={{ color: 'var(--accent-cyan)' }} />
+              <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-cyan)' }}>
+                Time-Series Trend Analysis ({metadata.granularity || validation?.plan?.granularity || 'MONTH'})
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.75rem', borderRadius: '20px', background: trendBadgeStyle.bg, color: trendBadgeStyle.color, border: trendBadgeStyle.border, fontSize: '0.82rem', fontWeight: 700 }}>
+              <TrendIcon size={16} />
+              <span>Overall Trend: {trendDir}</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem', fontSize: '0.82rem', color: 'var(--text-muted)', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem' }}>
+            <span>Date Column: <strong style={{ color: 'var(--text-main)' }}>{metadata.dateColumn || xKey}</strong></span>
+            <span>Measure Analyzed: <strong style={{ color: 'var(--text-main)' }}>{metadata.measureColumn || yKey}</strong></span>
+            <span>Chronological Periods: <strong style={{ color: 'var(--text-main)' }}>{resultData.length}</strong></span>
+            <span>Granularity: <strong style={{ color: 'var(--primary)' }}>{metadata.granularity || validation?.plan?.granularity || 'MONTH'}</strong></span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', marginTop: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem' }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <div>Overall Trend</div>
+              <strong style={{ color: trendBadgeStyle.color, fontSize: '0.95rem' }}>{trendDir}</strong>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <div>Trend Slope</div>
+              <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>
+                {metadata.slope !== undefined ? (metadata.slope >= 0 ? `+${formatValue(metadata.slope)}` : formatValue(metadata.slope)) : '—'}
+              </strong>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <div>Relative Slope</div>
+              <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>
+                {metadata.relativeSlope !== undefined ? `${metadata.relativeSlope >= 0 ? '+' : ''}${metadata.relativeSlope}%` : '—'}
+              </strong>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <div>R² (Fit Strength)</div>
+              <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>
+                {metadata.r2 !== undefined ? metadata.r2 : '—'}
+              </strong>
+            </div>
+          </div>
+
+          {metadata.missingValuesIgnored > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '6px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', color: 'var(--accent-amber)', fontSize: '0.8rem' }}>
+              <AlertTriangle size={15} />
+              <span>{metadata.missingValuesIgnored} {formatLabel(metadata.measureColumn || yKey)} values were missing. Trend calculations use available valid values.</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3. Scalar KPI Result Card */}
       {isScalar ? (
         <div
           style={{
@@ -199,7 +282,7 @@ export default function ResultVisualization({ execution, validation, question, t
         </div>
       ) : null}
 
-      {/* 3. Grouped / Tabular Results */}
+      {/* 4. Grouped / Tabular Results */}
       {!isScalar && !isCorrelation && (
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -226,18 +309,28 @@ export default function ResultVisualization({ execution, validation, question, t
               <tbody>
                 {resultData.map((row, idx) => (
                   <tr key={idx}>
-                    {keys.map((key, cIdx) => (
-                      <td
-                        key={cIdx}
-                        style={{
-                          fontFamily: typeof row[key] === 'number' ? 'var(--font-mono)' : 'inherit',
-                          fontWeight: typeof row[key] === 'number' ? 700 : 500,
-                          color: cIdx === 0 ? 'var(--text-main)' : 'inherit'
-                        }}
-                      >
-                        {formatValue(row[key])}
-                      </td>
-                    ))}
+                    {keys.map((key, cIdx) => {
+                      const rawVal = row[key];
+                      const isGrowthCol = key === 'Growth (%)' || key === 'growth';
+
+                      let growthColor = 'inherit';
+                      if (isGrowthCol && typeof rawVal === 'number') {
+                        growthColor = rawVal > 0 ? 'var(--accent-emerald)' : rawVal < 0 ? 'var(--accent-rose)' : 'inherit';
+                      }
+
+                      return (
+                        <td
+                          key={cIdx}
+                          style={{
+                            fontFamily: typeof rawVal === 'number' || isGrowthCol ? 'var(--font-mono)' : 'inherit',
+                            fontWeight: typeof rawVal === 'number' || isGrowthCol ? 700 : 500,
+                            color: isGrowthCol ? growthColor : cIdx === 0 ? 'var(--text-main)' : 'inherit'
+                          }}
+                        >
+                          {isGrowthCol ? (typeof rawVal === 'number' ? `${rawVal > 0 ? '+' : ''}${rawVal}%` : String(rawVal)) : formatValue(rawVal)}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -252,28 +345,28 @@ export default function ResultVisualization({ execution, validation, question, t
         </div>
       )}
 
-      {/* 4. Automatic Visualization Component (Line & Bar) */}
+      {/* 5. Automatic Visualization Component (Line & Bar) */}
       {shouldChart && (
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              {isTimeGroup ? (
+              {isTimeSeries ? (
                 <TrendingUp size={20} style={{ color: 'var(--accent-cyan)' }} />
               ) : (
                 <BarChart3 size={20} style={{ color: 'var(--primary)' }} />
               )}
               <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                {isTimeGroup ? `Time Trend (${formatLabel(yKey)} over ${formatLabel(xKey)})` : `Distribution (${formatLabel(yKey)} by ${formatLabel(xKey)})`}
+                {isTimeSeries ? `Time Trend (${formatLabel(yKey)} over ${formatLabel(xKey)})` : `Distribution (${formatLabel(yKey)} by ${formatLabel(xKey)})`}
               </h4>
             </div>
             <span className="type-tag">
-              {isTimeGroup ? 'Line Chart' : 'Bar Chart'}
+              {isTimeSeries ? 'Line Chart' : 'Bar Chart'}
             </span>
           </div>
 
-          <div style={{ width: '100%', height: 320, marginTop: '0.5rem' }}>
+          <div style={{ width: '100%', height: 340, marginTop: '0.5rem' }}>
             <ResponsiveContainer width="100%" height="100%">
-              {isTimeGroup ? (
+              {isTimeSeries ? (
                 <LineChart data={resultData} margin={{ top: 10, right: 30, left: 10, bottom: 25 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                   <XAxis
@@ -285,11 +378,11 @@ export default function ResultVisualization({ execution, validation, question, t
                   <YAxis
                     stroke={axisColor}
                     tick={{ fill: axisColor, fontSize: 12 }}
-                    tickFormatter={val => (typeof val === 'number' && val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val)}
+                    tickFormatter={val => (typeof val === 'number' && Math.abs(val) >= 1000 ? `${(val / 1000).toFixed(0)}k` : val)}
                   />
                   <Tooltip
                     contentStyle={{ background: tooltipBg, borderColor: tooltipBorder, borderRadius: '8px', color: tooltipTextColor }}
-                    formatter={(val) => [formatValue(val), formatLabel(yKey)]}
+                    formatter={(val, name) => [formatValue(val), formatLabel(name)]}
                     labelFormatter={(label) => `${formatLabel(xKey)}: ${label}`}
                   />
                   <Line
@@ -313,7 +406,7 @@ export default function ResultVisualization({ execution, validation, question, t
                   <YAxis
                     stroke={axisColor}
                     tick={{ fill: axisColor, fontSize: 12 }}
-                    tickFormatter={val => (typeof val === 'number' && val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val)}
+                    tickFormatter={val => (typeof val === 'number' && Math.abs(val) >= 1000 ? `${(val / 1000).toFixed(0)}k` : val)}
                   />
                   <Tooltip
                     contentStyle={{ background: tooltipBg, borderColor: tooltipBorder, borderRadius: '8px', color: tooltipTextColor }}
@@ -340,3 +433,4 @@ export default function ResultVisualization({ execution, validation, question, t
     </div>
   );
 }
+

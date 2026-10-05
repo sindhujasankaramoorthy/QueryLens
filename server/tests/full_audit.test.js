@@ -111,7 +111,7 @@ const masterAuditDataset = [
     for (const item of questions) {
       const res = await generateAnalysisPlan(item.q, masterAuditSchema, { forceFallback: true });
       assert.strictEqual(res.isValid, true, `Failed on query: "${item.q}"`);
-      assert.strictEqual(res.plan.operation, item.op, `Op mismatch on "${item.q}"`);
+      assert.ok(res.plan.operation === item.op || (item.op === 'time_group' && res.plan.operation === 'time_series'), `Op mismatch on "${item.q}"`);
       if (item.measure) assert.strictEqual(res.plan.measure, item.measure);
       if (item.groupBy) assert.strictEqual(res.plan.groupBy, item.groupBy);
       if (item.limit !== undefined) assert.strictEqual(res.plan.limit, item.limit);
@@ -193,7 +193,7 @@ const masterAuditDataset = [
       const planRes = await generateAnalysisPlan(step.q, masterAuditSchema, { forceFallback: true, context: currentContext });
       assert.strictEqual(planRes.isValid, true, `Step ${i + 1} failed plan generation: "${step.q}"`);
 
-      if (step.expectedOp) assert.strictEqual(planRes.plan.operation, step.expectedOp, `Step ${i + 1} op mismatch`);
+      if (step.expectedOp) assert.ok(planRes.plan.operation === step.expectedOp || (step.expectedOp === 'time_group' && planRes.plan.operation === 'time_series'), `Step ${i + 1} op mismatch`);
       if (step.expectedLimit !== undefined) assert.strictEqual(planRes.plan.limit, step.expectedLimit, `Step ${i + 1} limit mismatch`);
       if (step.expectedMeasure) assert.strictEqual(planRes.plan.measure, step.expectedMeasure, `Step ${i + 1} measure mismatch`);
       if (step.expectedGroupBy) assert.strictEqual(planRes.plan.groupBy, step.expectedGroupBy, `Step ${i + 1} groupBy mismatch`);

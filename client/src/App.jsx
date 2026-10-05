@@ -74,7 +74,7 @@ export default function App() {
 
         <div className="header-controls">
           <span className="phase-pill">
-            <Sparkles size={13} /> Phase 6: Insights & Redesign
+            <Sparkles size={13} /> Phase 8: Data Quality & Validation
           </span>
 
           <button
@@ -154,6 +154,7 @@ export default function App() {
               dataset={profileData.dataset} 
               duplicates={profileData.duplicates} 
               warningsCount={profileData.warnings ? profileData.warnings.length : 0}
+              qualitySummary={profileData.qualitySummary}
             />
 
             {/* 2. Natural Language Analysis Workbench */}
@@ -163,11 +164,12 @@ export default function App() {
               theme={theme}
             />
 
-            {/* 3. Phase 6 Data Quality & Statistical Insights */}
+            {/* 3. Phase 8 Data Quality & Validation Audit */}
             <DataQualityInsights 
               rows={profileData.rows} 
               columns={profileData.columns} 
               insights={profileData.insights} 
+              qualitySummary={profileData.qualitySummary}
               theme={theme}
             />
 

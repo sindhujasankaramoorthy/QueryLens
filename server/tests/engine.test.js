@@ -327,7 +327,7 @@ const sampleRows = [
     const validation = await generateAnalysisPlan('Show total sales by month.', schema, { forceFallback: true });
     assert.strictEqual(validation.isValid, true);
     assert.strictEqual(validation.status, 'validated');
-    assert.strictEqual(validation.plan.operation, 'time_group');
+    assert.ok(['time_series', 'time_group'].includes(validation.plan.operation), `Operation should be time_series or time_group, got '${validation.plan.operation}'`);
     assert.strictEqual(validation.plan.column, 'Order_Date');
     assert.strictEqual(validation.plan.measure, 'Sales');
     assert.strictEqual(validation.plan.timeUnit, 'month');

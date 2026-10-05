@@ -83,7 +83,7 @@ const underscoreSchema = [
     const result = await generateAnalysisPlan('Show monthly sales over time.', sampleSchema, { forceFallback: true });
     assert.strictEqual(result.isValid, true);
     assert.strictEqual(result.status, 'validated');
-    assert.strictEqual(result.plan.operation, 'time_group');
+    assert.ok(['time_series', 'time_group'].includes(result.plan.operation), `Operation should be time_series or time_group, got '${result.plan.operation}'`);
     assert.strictEqual(result.plan.column, 'sale_date');
     assert.strictEqual(result.plan.timeUnit, 'month');
   });

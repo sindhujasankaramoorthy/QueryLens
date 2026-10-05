@@ -92,7 +92,7 @@ function determineVisualization(executionResult, plan = null) {
   }
 
   // Chart selection logic based on operation type
-  if (operation === 'time_group' || plan?.timeUnit) {
+  if (operation === 'time_series' || operation === 'time_group' || plan?.timeUnit || plan?.granularity) {
     return {
       chartType: 'line',
       shouldRenderChart: true,

@@ -7,14 +7,16 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node tests/profiler.test.js && node tests/planner.test.js && node tests/engine.test.js && node tests/visualization.test.js && node tests/explanation.test.js && node tests/full_audit.test.js && node tests/insights.test.js && node tests/correlation.test.js && node tests/semanticType.test.js",
+    "test": "node tests/profiler.test.js && node tests/planner.test.js && node tests/engine.test.js && node tests/visualization.test.js && node tests/explanation.test.js && node tests/full_audit.test.js && node tests/insights.test.js && node tests/correlation.test.js && node tests/semanticType.test.js && node tests/dataQuality.test.js && node tests/timeSeries.test.js",
     "test:phase1": "node tests/profiler.test.js",
     "test:phase2": "node tests/planner.test.js",
     "test:phase3": "node tests/engine.test.js",
     "test:phase4": "node tests/visualization.test.js",
     "test:phase5": "node tests/explanation.test.js",
     "test:phase6": "node tests/insights.test.js",
-    "test:phase7": "node tests/correlation.test.js"
+    "test:phase7": "node tests/correlation.test.js",
+    "test:phase8": "node tests/dataQuality.test.js",
+    "test:phase9": "node tests/timeSeries.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -381,22 +381,148 @@ function executeAnalysisPlan(plan, rows) {
       break;
     }
 
+/**
+ * Statistically Reliable Simple Linear Regression Trend Analysis
+ * Fits y = mx + b over 1-indexed chronological period indices x = 1..N.
+ * Computes slope (m), relative slope (m / mean(y)), and R² coefficient of determination.
+ */
+function calculateLinearTrend(points, granularity = 'MONTH') {
+  if (!Array.isArray(points) || points.length === 0) {
+    return {
+      trendDirection: 'Insufficient Data',
+      slope: 0,
+      relativeSlope: 0,
+      r2: 0,
+      sampleCount: 0,
+      trendMethod: 'Insufficient data points to compute regression trend.'
+    };
+  }
+
+  // Filter out invalid or missing numerical values
+  const validPoints = points.filter(p => p && typeof p.y === 'number' && !isNaN(p.y) && isFinite(p.y));
+  const N = validPoints.length;
+
+  if (N < 2) {
+    return {
+      trendDirection: 'Insufficient Data',
+      slope: 0,
+      relativeSlope: 0,
+      r2: 0,
+      sampleCount: N,
+      trendMethod: 'At least 2 valid chronological periods are required to compute regression trend.'
+    };
+  }
+
+  // Use 1-indexed integer chronological period indices: x = 1, 2, ..., N
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumX2 = 0;
+
+  validPoints.forEach((p, i) => {
+    const x = i + 1;
+    const y = p.y;
+    sumX += x;
+    sumY += y;
+    sumXY += x * y;
+    sumX2 += x * x;
+  });
+
+  const meanX = sumX / N;
+  const meanY = sumY / N;
+
+  const denom = N * sumX2 - sumX * sumX;
+  const m = denom !== 0 ? (N * sumXY - sumX * sumY) / denom : 0;
+  const b = meanY - m * meanX;
+
+  // Calculate R² (Coefficient of Determination)
+  let sst = 0;
+  let sse = 0;
+
+  validPoints.forEach((p, i) => {
+    const x = i + 1;
+    const y = p.y;
+    const yFit = m * x + b;
+    sst += (y - meanY) * (y - meanY);
+    sse += (y - yFit) * (y - yFit);
+  });
+
+  let r2 = 0;
+  if (sst === 0) {
+    // Zero variance (all y values identical): horizontal line fits data perfectly
+    r2 = 1.0;
+  } else {
+    r2 = Math.max(0, Math.min(1, 1 - (sse / sst)));
+  }
+
+  // Calculate relative slope = slope / mean(y)
+  let relativeSlope = 0;
+  if (meanY !== 0) {
+    relativeSlope = m / Math.abs(meanY);
+  } else if (m !== 0) {
+    relativeSlope = Math.sign(m);
+  }
+
+  // Trend Classification based on relative slope threshold of 0.005 (0.5% per period)
+  let trendDirection = 'Stable';
+  if (Math.abs(relativeSlope) < 0.005) {
+    trendDirection = 'Stable';
+  } else if (relativeSlope > 0) {
+    trendDirection = 'Increasing';
+  } else {
+    trendDirection = 'Decreasing';
+  }
+
+  const slopeFormatted = Number(m.toFixed(2));
+  const relSlopePercent = Number((relativeSlope * 100).toFixed(2));
+  const r2Formatted = Number(r2.toFixed(2));
+
+  const slopeStr = m >= 0 ? `+${m.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : m.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const relSlopeStr = relativeSlope >= 0 ? `+${relSlopePercent}%` : `${relSlopePercent}%`;
+
+  const confNote = N === 2 ? ' (Note: 2 periods evaluate line fit with low statistical confidence)' : '';
+  const trendMethod = `Linear regression (y = ${slopeStr}x + ${b.toFixed(2)}, relative slope = ${relSlopeStr}/period, R² = ${r2Formatted}) across ${N} chronological periods${confNote}.`;
+
+  return {
+    trendDirection,
+    slope: slopeFormatted,
+    relativeSlope: relSlopePercent,
+    rawRelativeSlope: relativeSlope,
+    r2: r2Formatted,
+    trendMethod,
+    sampleCount: N,
+    isLowConfidence: N === 2
+  };
+}
+
+    case 'time_series':
     case 'time_group': {
-      const dateCol = plan.column || plan.groupBy;
+      const dateCol = plan.date_column || plan.column || plan.groupBy;
       const measure = plan.measure;
-      const timeUnit = plan.timeUnit || 'month';
+      const groupBy = plan.groupBy || plan.group_by;
+      const granularity = (plan.granularity || plan.timeUnit || 'MONTH').toUpperCase();
       const agg = (plan.aggregation || 'sum').toLowerCase();
 
-      if (!dateCol) throw new Error('Time grouping operation requires a date column.');
+      if (!dateCol) throw new Error('Time-series analysis requires a date column.');
 
-      const timeGroupsMap = new Map();
+      let invalidDatesExcluded = 0;
+      const timeGroupDataMap = new Map();
 
       filteredRows.forEach(row => {
         const rawDate = getCellValue(row, dateCol);
-        const dateKey = getTimeGroupKey(rawDate, timeUnit);
+        const parsedD = parseDateValue(rawDate);
 
-        if (!timeGroupsMap.has(dateKey)) {
-          timeGroupsMap.set(dateKey, []);
+        if (!parsedD) {
+          invalidDatesExcluded++;
+          return;
+        }
+
+        const dateKey = getTimeGroupKey(parsedD, granularity);
+        const groupVal = groupBy ? (isMissingValue(getCellValue(row, groupBy)) ? 'Unknown' : String(getCellValue(row, groupBy)).trim()) : '__ALL__';
+
+        const compositeKey = `${dateKey}|||${groupVal}`;
+        if (!timeGroupDataMap.has(compositeKey)) {
+          timeGroupDataMap.set(compositeKey, { dateKey, groupVal, values: [] });
         }
 
         if (measure) {
@@ -404,7 +530,7 @@ function executeAnalysisPlan(plan, rows) {
           if (!isMissingValue(mVal)) {
             const num = parseNumber(mVal);
             if (!isNaN(num)) {
-              timeGroupsMap.get(dateKey).push(num);
+              timeGroupDataMap.get(compositeKey).values.push(num);
             } else {
               missingValuesIgnored++;
             }
@@ -412,19 +538,18 @@ function executeAnalysisPlan(plan, rows) {
             missingValuesIgnored++;
           }
         } else {
-          timeGroupsMap.get(dateKey).push(1);
+          timeGroupDataMap.get(compositeKey).values.push(1);
         }
       });
 
-      const measureLabel = measure ? `${measure}_${agg}` : 'count';
-      const timeList = [];
-
-      timeGroupsMap.forEach((values, dateKey) => {
+      // Calculate aggregate per group & date key
+      const tempRows = [];
+      timeGroupDataMap.forEach(({ dateKey, groupVal, values }) => {
         let aggValue = 0;
         if (agg === 'sum') {
-          aggValue = values.reduce((acc, curr) => acc + curr, 0);
+          aggValue = values.reduce((a, b) => a + b, 0);
         } else if (agg === 'average') {
-          aggValue = values.length > 0 ? values.reduce((acc, curr) => acc + curr, 0) / values.length : 0;
+          aggValue = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
         } else if (agg === 'median') {
           if (values.length > 0) {
             const sorted = [...values].sort((a, b) => a - b);
@@ -439,17 +564,115 @@ function executeAnalysisPlan(plan, rows) {
           aggValue = values.length;
         }
 
-        timeList.push({
-          [dateCol]: dateKey,
-          [measureLabel]: Number(aggValue.toFixed(4))
+        tempRows.push({
+          dateKey,
+          groupVal,
+          aggValue: Number(aggValue.toFixed(4)),
+          count: values.length
         });
       });
 
-      // Sort chronologically by date key
-      timeList.sort((a, b) => String(a[dateCol]).localeCompare(String(b[dateCol])));
+      // Chronological sorting by dateKey
+      tempRows.sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)));
 
-      resultData = plan.limit ? timeList.slice(0, plan.limit) : timeList;
-      break;
+      // Group rows by groupVal to calculate period-over-period growth per series
+      const seriesByGroup = new Map();
+      tempRows.forEach(item => {
+        if (!seriesByGroup.has(item.groupVal)) {
+          seriesByGroup.set(item.groupVal, []);
+        }
+        seriesByGroup.get(item.groupVal).push(item);
+      });
+
+      const finalResults = [];
+      const groupedSeriesData = {};
+
+      seriesByGroup.forEach((items, gVal) => {
+        let prevVal = null;
+        const groupPoints = [];
+
+        const seriesList = [];
+        items.forEach((item, idx) => {
+          let growthPercent = null;
+          if (idx > 0 && prevVal !== null && prevVal !== 0) {
+            growthPercent = Number((((item.aggValue - prevVal) / Math.abs(prevVal)) * 100).toFixed(2));
+          }
+          prevVal = item.aggValue;
+
+          groupPoints.push({ x: idx + 1, y: item.aggValue, dateKey: item.dateKey });
+
+          const measureKey = measure || 'Value';
+          const measureAggKey = measure ? `${measure}_${agg}` : 'count';
+
+          const rowObj = {
+            [dateCol]: item.dateKey,
+            ...(groupBy ? { [groupBy]: gVal } : {}),
+            [measureKey]: item.aggValue,
+            ...(measureAggKey !== measureKey ? { [measureAggKey]: item.aggValue } : {}),
+            'Growth (%)': growthPercent !== null ? growthPercent : '—'
+          };
+
+          seriesList.push({
+            dateKey: item.dateKey,
+            value: item.aggValue,
+            growthPercent
+          });
+
+          finalResults.push(rowObj);
+        });
+
+        if (groupBy) {
+          const groupTrend = calculateLinearTrend(groupPoints, granularity);
+          groupedSeriesData[gVal] = {
+            series: seriesList,
+            trendDirection: groupTrend.trendDirection,
+            slope: groupTrend.slope,
+            relativeSlope: groupTrend.relativeSlope,
+            r2: groupTrend.r2,
+            trendMethod: groupTrend.trendMethod
+          };
+        }
+      });
+
+      // Overall trend direction on overall aggregate
+      const overallPointsMap = new Map();
+      tempRows.forEach(row => {
+        if (!overallPointsMap.has(row.dateKey)) overallPointsMap.set(row.dateKey, 0);
+        overallPointsMap.set(row.dateKey, overallPointsMap.get(row.dateKey) + row.aggValue);
+      });
+
+      const sortedOverallKeys = Array.from(overallPointsMap.keys()).sort((a, b) => String(a).localeCompare(String(b)));
+      const overallPoints = sortedOverallKeys.map((dateKey, idx) => ({
+        x: idx + 1,
+        y: overallPointsMap.get(dateKey),
+        dateKey
+      }));
+
+      const { trendDirection, trendMethod, slope, relativeSlope, r2 } = calculateLinearTrend(overallPoints, granularity);
+
+      resultData = plan.limit ? finalResults.slice(0, plan.limit) : finalResults;
+
+      return {
+        status: 'success',
+        operation: 'time_series',
+        columnsUsed: [dateCol, measure, groupBy].filter(Boolean),
+        result: resultData,
+        metadata: {
+          rowsAnalyzed,
+          missingValuesIgnored,
+          invalidDatesExcluded,
+          dateColumn: dateCol,
+          measureColumn: measure,
+          granularity,
+          aggregation: agg,
+          trendDirection,
+          trendMethod,
+          slope,
+          relativeSlope,
+          r2,
+          groupedSeries: groupBy ? groupedSeriesData : null
+        }
+      };
     }
 
     case 'describe': {

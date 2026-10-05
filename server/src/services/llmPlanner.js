@@ -468,31 +468,64 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
   }
 
   // Time series / time-based grouping check
-  const timeKeywords = ['month', 'monthly', 'by month', 'per month', 'year', 'yearly', 'annual', 'by year', 'day', 'daily', 'by date', 'quarter', 'quarterly', 'week', 'weekly', 'trend', 'over time', 'by time', 'timeline', 'range', 'order date'];
+  const timeKeywords = ['month', 'monthly', 'by month', 'per month', 'year', 'yearly', 'annual', 'by year', 'day', 'daily', 'by date', 'quarter', 'quarterly', 'week', 'weekly', 'trend', 'over time', 'by time', 'timeline', 'range', 'order date', 'change over time', 'increase or decrease', 'growth'];
   const isTimeQuery = timeKeywords.some(k => q.includes(k)) || !!matchedDate;
 
-  if (isTimeQuery && dateCols.length > 0) {
-    const targetMeasure = activeMeasure;
+  if (isTimeQuery) {
+    // 1. Check if date column exists in dataset schema
+    if (dateCols.length === 0) {
+      return {
+        status: 'cannot_answer',
+        reason: 'Time-series analysis cannot be performed because the dataset does not contain a usable date/time column.'
+      };
+    }
+
+    // 2. Check if requested measure is an identifier column (e.g. Order_ID)
+    if (matchedId) {
+      return {
+        status: 'cannot_answer',
+        reason: `Column '${matchedId.name}' is an identifier column, not an analytical numerical measure.`
+      };
+    }
+
     const targetDate = matchedDate ? matchedDate.name : dateCols[0].name;
+    const targetMeasure = activeMeasure;
 
     let timeUnit = 'month';
-    if (q.includes('year') || q.includes('yearly') || q.includes('annual')) timeUnit = 'year';
-    else if (q.includes('quarter') || q.includes('quarterly')) timeUnit = 'quarter';
-    else if (q.includes('day') || q.includes('daily') || q.includes('by date')) timeUnit = 'day';
-    else if (q.includes('week') || q.includes('weekly')) timeUnit = 'week';
+    let granularity = 'MONTH';
+
+    if (q.includes('year') || q.includes('yearly') || q.includes('annual')) {
+      timeUnit = 'year';
+      granularity = 'YEAR';
+    } else if (q.includes('quarter') || q.includes('quarterly')) {
+      timeUnit = 'quarter';
+      granularity = 'QUARTER';
+    } else if (q.includes('day') || q.includes('daily') || q.includes('by date')) {
+      timeUnit = 'day';
+      granularity = 'DAY';
+    } else if (q.includes('week') || q.includes('weekly')) {
+      timeUnit = 'week';
+      granularity = 'WEEK';
+    }
 
     let agg = 'sum';
     if (q.includes('average') || q.includes('mean') || q.includes('avg')) agg = 'average';
     else if (q.includes('count') || q.includes('how many')) agg = 'count';
 
+    // Grouped trend check (e.g. "by Region", "for each Product")
+    const groupByCol = matchedCat ? matchedCat.name : null;
+
     return {
       status: 'success',
       plan: {
-        operation: 'time_group',
+        operation: 'time_series',
+        date_column: targetDate,
         column: targetDate,
         measure: targetMeasure,
         aggregation: agg,
-        timeUnit: timeUnit
+        granularity: granularity,
+        timeUnit: timeUnit,
+        groupBy: groupByCol
       }
     };
   }

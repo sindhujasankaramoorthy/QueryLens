@@ -23,6 +23,24 @@ function extractEvidenceNumbers(evidence) {
   if (evidence?.metadata?.missingValuesIgnored !== undefined) {
     numbers.add(String(evidence.metadata.missingValuesIgnored));
   }
+  if (evidence?.metadata?.invalidDatesExcluded !== undefined) {
+    numbers.add(String(evidence.metadata.invalidDatesExcluded));
+  }
+  if (evidence?.metadata?.slope !== undefined) {
+    numbers.add(String(evidence.metadata.slope));
+  }
+  if (evidence?.metadata?.netChangePercent !== undefined && evidence.metadata.netChangePercent !== null) {
+    numbers.add(String(evidence.metadata.netChangePercent));
+    numbers.add(Math.abs(evidence.metadata.netChangePercent).toString());
+  }
+
+  if (evidence?.metadata?.relativeSlope !== undefined) {
+    numbers.add(String(evidence.metadata.relativeSlope));
+    numbers.add(Math.abs(evidence.metadata.relativeSlope).toString());
+  }
+  if (evidence?.metadata?.r2 !== undefined) {
+    numbers.add(String(evidence.metadata.r2));
+  }
 
   if (Array.isArray(evidence?.result)) {
     evidence.result.forEach(row => {
@@ -134,22 +152,45 @@ function generateDeterministicExplanation(evidence) {
   }
 
   // 3. Time Series Result (e.g. Monthly sales)
-  if (operation === 'time_group' || plan.timeUnit) {
-    const xKey = keys.find(k => typeof firstRow[k] !== 'number') || keys[0];
-    const yKey = keys.find(k => k !== xKey && typeof firstRow[k] === 'number') || keys[1];
+  if (operation === 'time_series' || operation === 'time_group' || plan.granularity || plan.timeUnit) {
+    const dateCol = metadata.dateColumn || keys.find(k => typeof firstRow[k] !== 'number') || keys[0];
+    const measureCol = metadata.measureColumn || keys.find(k => k !== dateCol && typeof firstRow[k] === 'number') || keys[1];
 
-    const cleanYKey = yKey ? yKey.replace(/_/g, ' ') : 'sales';
-    const sortedVals = [...result].sort((a, b) => (b[yKey] || 0) - (a[yKey] || 0));
+    const cleanYKey = measureCol ? measureCol.replace(/_/g, ' ') : 'sales';
+    const granLabel = (metadata.granularity || plan.granularity || plan.timeUnit || 'month').toLowerCase();
+    const periodCount = result.length;
 
-    const peakItem = sortedVals[0];
-    const peakVal = formatNumberUS(peakItem[yKey]);
-    const peakDate = peakItem[xKey];
+    const trendDir = metadata.trendDirection || 'Stable';
+    const r2Val = metadata.r2 !== undefined ? metadata.r2 : 0;
 
-    const lowestItem = sortedVals[sortedVals.length - 1];
-    const lowestVal = formatNumberUS(lowestItem[yKey]);
-    const lowestDate = lowestItem[xKey];
+    let baseText = '';
 
-    return `${cleanYKey} was tracked across ${result.length} time periods, peaking in ${peakDate} at ${peakVal} and reaching a lowest point in ${lowestDate} at ${lowestVal}.`;
+    const sortedVals = [...result].filter(r => typeof r[measureCol] === 'number').sort((a, b) => b[measureCol] - a[measureCol]);
+
+    if (trendDir === 'Insufficient Data') {
+      baseText = `Insufficient data across time periods to determine a statistically reliable trend for ${cleanYKey}.`;
+    } else if (trendDir === 'Stable') {
+      baseText = `${cleanYKey} shows a Stable overall trend across ${periodCount} ${granLabel} periods. The regression slope is close to zero, indicating no meaningful long-term directional movement.`;
+    } else if (r2Val >= 0.50) {
+      const verb = trendDir === 'Increasing' ? 'growth' : 'decline';
+      baseText = `${cleanYKey} shows a clear ${trendDir} trend across ${periodCount} ${granLabel} periods. The ${trendDir === 'Increasing' ? 'positive' : 'negative'} regression slope indicates ${verb} over time, and the high R² (${r2Val}) indicates that the time series follows the overall trend relatively closely.`;
+    } else {
+      const directionWord = trendDir === 'Increasing' ? 'increased' : 'declined';
+      baseText = `${cleanYKey} shows an overall ${trendDir} trend across ${periodCount} ${granLabel} periods. The regression slope is ${trendDir === 'Increasing' ? 'positive' : 'negative'}, indicating that ${cleanYKey} generally ${directionWord} over time, although the relatively low R² (${r2Val}) indicates substantial period-to-period variation.`;
+    }
+
+    if (sortedVals.length > 0) {
+      const peakItem = sortedVals[0];
+      const peakVal = formatNumberUS(peakItem[measureCol]);
+      const peakDate = peakItem[dateCol];
+      baseText += ` Values peaked in ${peakDate} at ${peakVal}.`;
+    }
+
+    if (metadata.missingValuesIgnored > 0) {
+      baseText += ` Note: ${metadata.missingValuesIgnored} ${cleanYKey} values were missing. Trend calculations use available valid values.`;
+    }
+
+    return baseText;
   }
 
   // 4. Correlation Result

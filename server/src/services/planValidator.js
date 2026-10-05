@@ -17,6 +17,7 @@ const SUPPORTED_OPERATIONS = new Set([
   'top_n',
   'bottom_n',
   'time_group',
+  'time_series',
   'describe',
   'correlation'
 ]);
@@ -264,16 +265,43 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
     }
   }
 
-  // Time grouping requires a date/datetime column
-  if (operation === 'time_group' || plan.timeUnit) {
-    const dateCol = plan.column || plan.groupBy;
+  // Time grouping / time series requires a valid date/datetime column and analytical measure
+  if (operation === 'time_series' || operation === 'time_group' || plan.timeUnit || plan.granularity) {
+    let dateCol = plan.date_column || plan.column || plan.groupBy;
+
+    // Auto-detect date column from schema if not explicitly specified
+    if (!dateCol) {
+      const dateSchemaCol = (schemaColumns || []).find(c => isDateType(c.type, c.name));
+      if (dateSchemaCol) dateCol = dateSchemaCol.name;
+    }
+
+    if (!dateCol) {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: 'Time-series analysis cannot be performed because the dataset does not contain a usable date/time column.'
+      };
+    }
+
     const colType = getColType(dateCol);
     if (!isDateType(colType, dateCol)) {
       return {
-        isValid: false,
-        status: 'rejected',
+        isValid: true,
+        status: 'cannot_answer',
         plan: null,
-        reason: `Time-based grouping requires a date or datetime column. Column '${dateCol}' has type '${colType}'.`
+        reason: 'Time-series analysis cannot be performed because the dataset does not contain a usable date/time column.'
+      };
+    }
+
+    // Check target measure
+    const targetMeas = plan.measure || (plan.column !== dateCol ? plan.column : null);
+    if (targetMeas && getColSemanticType(targetMeas) === 'identifier') {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: `Column '${getCanonicalColName(targetMeas)}' is an identifier column, not an analytical numerical measure.`
       };
     }
   }
@@ -366,16 +394,24 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
     }
   }
 
+  // Standardize time fields if time operation
+  const isTimeOp = operation === 'time_series' || operation === 'time_group' || Boolean(plan.timeUnit) || Boolean(plan.granularity);
+  const rawGran = plan.granularity || plan.timeUnit || (isTimeOp ? 'MONTH' : null);
+  const normGranularity = rawGran ? String(rawGran).toUpperCase() : null;
+  const dateCol = getCanonicalColName(plan.date_column || plan.column || (isTimeOp ? plan.groupBy : null));
+
   // Construct standardized validated plan object
   const validatedPlan = {
     operation,
-    groupBy: getCanonicalColName(plan.groupBy),
+    groupBy: getCanonicalColName(plan.groupBy || plan.group_by),
     measure: getCanonicalColName(targetMeasure),
-    column: getCanonicalColName(plan.column),
-    aggregation: agg || (['sum', 'average', 'median', 'min', 'max', 'count'].includes(operation) ? operation : null),
+    column: dateCol || getCanonicalColName(plan.column),
+    date_column: dateCol || getCanonicalColName(plan.column),
+    aggregation: agg || (['sum', 'average', 'median', 'min', 'max', 'count'].includes(operation) ? operation : 'sum'),
     sort: plan.sort ? plan.sort.toLowerCase() : (operation === 'top_n' ? 'descending' : operation === 'bottom_n' ? 'ascending' : null),
     limit: parsedLimit || (operation === 'top_n' || operation === 'bottom_n' ? (plan.n ? parseInt(plan.n, 10) : 5) : null),
-    timeUnit: plan.timeUnit || null,
+    granularity: normGranularity,
+    timeUnit: normGranularity ? normGranularity.toLowerCase() : null,
     filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
   };
 
