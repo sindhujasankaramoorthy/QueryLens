@@ -42,7 +42,6 @@ function extractEvidenceNumbers(evidence) {
   }
   if (evidence?.metadata?.totalRecords !== undefined) numbers.add(String(evidence.metadata.totalRecords));
   if (evidence?.metadata?.rowsExcluded !== undefined) numbers.add(String(evidence.metadata.rowsExcluded));
-  if (evidence?.metadata?.randomState !== undefined) numbers.add(String(evidence.metadata.randomState));
 
   if (Array.isArray(evidence?.result)) {
     evidence.result.forEach(row => {
@@ -142,24 +141,24 @@ function generateDeterministicExplanation(evidence) {
   // 0. Anomaly Detection Result (Phase 11)
   if (operation === 'anomaly_detection') {
     const featureList = (metadata.features || []).join(', ');
-    const countAnomalies = metadata.anomaliesDetected !== undefined ? metadata.anomaliesDetected : 0;
+    const countOutliers = metadata.anomaliesDetected !== undefined ? metadata.anomaliesDetected : 0;
     const rate = metadata.anomalyRate !== undefined ? metadata.anomalyRate : 0;
 
-    let explanationText = `The Phase 7 IQR statistical outlier detection method (1.5x IQR bound) identified ${countAnomalies} statistical anomalies (${rate}% anomaly rate) across ${rowsCount} analyzed records using features ${featureList}.`;
+    let explanationText = `The Phase 7 IQR statistical outlier detection method (1.5x IQR bound) identified ${countOutliers} statistical outliers (${rate}% outlier rate) across ${rowsCount} analyzed records using features ${featureList}.`;
 
     if (result.length > 0) {
-      const topAnomaly = result.find(r => r['Anomaly Status'] === 'Anomaly') || result[0];
-      const idCol = Object.keys(topAnomaly).find(k => k.toLowerCase().includes('id') || k.toLowerCase() === '#') || 'Order_ID';
-      const topId = topAnomaly[idCol];
-      const context = topAnomaly['Supporting Context'];
+      const topOutlier = result.find(r => r['Outlier Status'] === 'Statistical Outlier') || result[0];
+      const idCol = Object.keys(topOutlier).find(k => k.toLowerCase().includes('id') || k.toLowerCase() === '#') || 'Order_ID';
+      const topId = topOutlier[idCol];
+      const context = topOutlier['Supporting Context'];
 
       if (context) {
-        explanationText += ` Record ${topId} exhibits the most unusual pattern: ${context}. Statistical IQR outliers are values outside 1.5x IQR bounds and do not automatically indicate data errors.`;
+        explanationText += ` Record ${topId} exhibits the most extreme statistical deviation: ${context}. Statistical IQR outliers are values outside 1.5x IQR bounds and do not automatically indicate invalid data.`;
       } else {
-        explanationText += ` These records contain values outside typical 1.5x IQR bounds relative to the overall dataset. Statistical outliers do not automatically imply data errors.`;
+        explanationText += ` These records contain values outside typical 1.5x IQR bounds relative to the overall dataset. Statistical outliers do not automatically imply invalid data.`;
       }
     } else {
-      explanationText += ` No statistical anomalies were detected outside the 1.5x IQR bounds.`;
+      explanationText += ` No statistical outliers were detected outside the 1.5x IQR bounds.`;
     }
 
     return explanationText;

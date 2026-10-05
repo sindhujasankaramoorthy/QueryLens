@@ -1135,10 +1135,8 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
           }
         });
 
-        const isAnomaly = maxDistance > 0;
-        if (isAnomaly) anomalyCount++; else normalCount++;
-
-        const rawScore = Number(maxDistance.toFixed(4));
+        const isOutlier = maxDistance > 0;
+        if (isOutlier) anomalyCount++; else normalCount++;
 
         const contextStr = contextParts.length > 0 
           ? contextParts.join('; ')
@@ -1149,10 +1147,7 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
 
         const resultObj = {
           [idCol]: rawId !== undefined ? rawId : i + 1,
-          'Anomaly Status': isAnomaly ? 'Anomaly' : 'Normal',
-          'Anomaly Score': rawScore,
-          rawScore,
-          isAnomaly
+          'Outlier Status': isOutlier ? 'Statistical Outlier' : 'Within Bounds'
         };
 
         features.forEach((f, fIdx) => {
@@ -1161,13 +1156,13 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
 
         resultObj['Supporting Context'] = contextStr;
 
-        return resultObj;
+        return { ...resultObj, maxDistance };
       });
 
-      // Sort by Anomaly Score descending
-      scoredRows.sort((a, b) => b.rawScore - a.rawScore);
+      // Sort by max distance outside IQR bounds descending
+      scoredRows.sort((a, b) => b.maxDistance - a.maxDistance);
 
-      const finalResultData = scoredRows.map(({ rawScore, isAnomaly, ...rest }) => rest);
+      const finalResultData = scoredRows.map(({ maxDistance, ...rest }) => rest);
       resultData = finalResultData;
 
       const featureX = features[0];
@@ -1181,8 +1176,7 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
           x: featureMatrix[i][0],
           y: featureMatrix[i][features.length > 1 ? 1 : 0],
           id: rawId !== undefined ? rawId : i + 1,
-          status: itemObj ? itemObj['Anomaly Status'] : 'Normal',
-          score: itemObj ? itemObj['Anomaly Score'] : 0
+          status: itemObj ? itemObj['Outlier Status'] : 'Within Bounds'
         };
       });
 

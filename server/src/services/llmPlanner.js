@@ -242,42 +242,31 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
 
     const matchedNumerics = numericCols.filter(c => findColumnInQuery([c], question));
 
-    if (matchedNumerics.length >= 2) {
+    if (matchedNumerics.length >= 1) {
       return {
         status: 'success',
         plan: {
           operation: 'anomaly_detection',
-          method: 'isolation_forest',
-          features: matchedNumerics.map(c => c.name),
-          contamination: 'auto',
-          random_state: 42
+          method: 'iqr',
+          features: matchedNumerics.map(c => c.name)
         }
       };
     }
 
-    if (matchedNumerics.length === 1) {
-      return {
-        status: 'cannot_answer',
-        reason: 'For multivariate anomaly detection, at least two eligible numerical measures are required.'
-      };
-    }
-
-    if (numericCols.length >= 2) {
+    if (numericCols.length >= 1) {
       return {
         status: 'success',
         plan: {
           operation: 'anomaly_detection',
-          method: 'isolation_forest',
-          features: numericCols.map(c => c.name),
-          contamination: 'auto',
-          random_state: 42
+          method: 'iqr',
+          features: numericCols.map(c => c.name)
         }
       };
     }
 
     return {
       status: 'cannot_answer',
-      reason: 'Anomaly detection cannot be performed because the dataset contains fewer than two eligible numerical measures.'
+      reason: 'Anomaly detection cannot be performed because the dataset contains no eligible numerical measures.'
     };
   }
 

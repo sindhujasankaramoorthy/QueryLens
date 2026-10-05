@@ -412,22 +412,22 @@ export default function ResultVisualization({ execution, validation, question, t
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <AlertTriangle size={22} style={{ color: 'var(--accent-rose)' }} />
                 <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-rose)' }}>
-                  Statistical Anomaly Detection (Phase 7 IQR)
+                  Statistical Outlier Detection (Phase 7 IQR)
                 </span>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: 'rgba(244, 63, 94, 0.15)', color: 'var(--accent-rose)', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
-                  Anomalies: {metadata.anomaliesDetected || 0}
+                  Statistical Outliers: {metadata.anomaliesDetected || 0}
                 </span>
                 <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-emerald)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                  Normal: {metadata.normalRecords || 0}
+                  Within IQR Bounds: {metadata.normalRecords || 0}
                 </span>
               </div>
             </div>
 
             {/* Explanatory Distinction Banner */}
             <div style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', background: 'rgba(0, 0, 0, 0.2)', border: '1px dashed rgba(255, 255, 255, 0.15)', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-              <strong style={{ color: 'var(--accent-amber)' }}>Statistical Outlier Detection (Phase 7 IQR):</strong> Reuses the standard Phase 7 Interquartile Range method [Q1 - 1.5xIQR, Q3 + 1.5xIQR] to flag records with extreme statistical values.
+              <strong style={{ color: 'var(--accent-amber)' }}>Statistical Outlier Detection (Phase 7 IQR):</strong> Reuses the standard Phase 7 Interquartile Range method [Q1 - 1.5xIQR, Q3 + 1.5xIQR] to identify records containing statistically extreme values without treating them as invalid errors.
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem' }}>
@@ -444,7 +444,7 @@ export default function ResultVisualization({ execution, validation, question, t
                 <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.rowsExcluded || 0}</strong>
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                <div>Anomaly Rate</div>
+                <div>Outlier Rate</div>
                 <strong style={{ color: 'var(--accent-rose)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.anomalyRate || 0}%</strong>
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
@@ -461,7 +461,7 @@ export default function ResultVisualization({ execution, validation, question, t
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <ScatterIcon size={20} style={{ color: 'var(--accent-rose)' }} />
                   <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                    Statistical Anomaly Scatter Plot ({metadata.featureX} vs {metadata.featureY})
+                    Statistical Outlier Scatter Plot ({metadata.featureX} vs {metadata.featureY})
                   </h4>
                 </div>
                 <span className="type-tag">Phase 7 IQR ({metadata.scatterPoints.length} points)</span>
@@ -498,14 +498,14 @@ export default function ResultVisualization({ execution, validation, question, t
                       ]}
                     />
                     <Scatter
-                      name="Normal Observations"
-                      data={metadata.scatterPoints.filter(p => p.status === 'Normal')}
+                      name="Within Bounds"
+                      data={metadata.scatterPoints.filter(p => p.status === 'Within Bounds')}
                       fill="var(--primary)"
                       opacity={0.75}
                     />
                     <Scatter
-                      name="IQR Anomalies"
-                      data={metadata.scatterPoints.filter(p => p.status === 'Anomaly')}
+                      name="Statistical Outliers"
+                      data={metadata.scatterPoints.filter(p => p.status === 'Statistical Outlier')}
                       fill="#f43f5e"
                       shape="diamond"
                       size={80}
@@ -523,10 +523,9 @@ export default function ResultVisualization({ execution, validation, question, t
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Layers size={18} style={{ color: 'var(--primary)' }} />
                 <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                  Anomaly Detection Results ({resultData.length} Records)
+                  Statistical Outlier Records ({resultData.length} Records)
                 </h4>
               </div>
-              <span className="type-tag">Sorted by Anomaly Score Descending</span>
             </div>
 
             <div className="table-wrapper">
@@ -540,18 +539,17 @@ export default function ResultVisualization({ execution, validation, question, t
                 </thead>
                 <tbody>
                   {resultData.map((row, idx) => {
-                    const isAnomaly = row['Anomaly Status'] === 'Anomaly';
+                    const isOutlier = row['Outlier Status'] === 'Statistical Outlier';
                     return (
-                      <tr key={idx} style={{ background: isAnomaly ? (isDark ? 'rgba(244, 63, 94, 0.08)' : 'rgba(244, 63, 94, 0.05)') : 'transparent' }}>
+                      <tr key={idx} style={{ background: isOutlier ? (isDark ? 'rgba(244, 63, 94, 0.08)' : 'rgba(244, 63, 94, 0.05)') : 'transparent' }}>
                         {keys.map((key, cIdx) => {
                           const rawVal = row[key];
-                          const isStatus = key === 'Anomaly Status';
-                          const isScore = key === 'Anomaly Score';
+                          const isStatus = key === 'Outlier Status';
 
                           if (isStatus) {
                             return (
                               <td key={cIdx}>
-                                <span style={{ padding: '0.2rem 0.55rem', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, background: isAnomaly ? 'rgba(244, 63, 94, 0.2)' : 'rgba(16, 185, 129, 0.15)', color: isAnomaly ? 'var(--accent-rose)' : 'var(--accent-emerald)' }}>
+                                <span style={{ padding: '0.2rem 0.55rem', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, background: isOutlier ? 'rgba(244, 63, 94, 0.2)' : 'rgba(16, 185, 129, 0.15)', color: isOutlier ? 'var(--accent-rose)' : 'var(--accent-emerald)' }}>
                                   {rawVal}
                                 </span>
                               </td>
@@ -563,9 +561,9 @@ export default function ResultVisualization({ execution, validation, question, t
                               key={cIdx}
                               style={{
                                 textAlign: typeof rawVal === 'number' ? 'right' : 'left',
-                                fontFamily: typeof rawVal === 'number' || isScore ? 'var(--font-mono)' : 'inherit',
-                                fontWeight: typeof rawVal === 'number' || isAnomaly ? 700 : 500,
-                                color: isScore && isAnomaly ? 'var(--accent-rose)' : cIdx === 0 ? 'var(--text-main)' : 'inherit'
+                                fontFamily: typeof rawVal === 'number' ? 'var(--font-mono)' : 'inherit',
+                                fontWeight: typeof rawVal === 'number' || isOutlier ? 700 : 500,
+                                color: cIdx === 0 ? 'var(--text-main)' : 'inherit'
                               }}
                             >
                               {formatValue(rawVal)}

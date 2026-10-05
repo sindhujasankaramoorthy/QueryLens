@@ -62,9 +62,9 @@ describe('Phase 11 — Advanced Anomaly Detection Tests', () => {
     const execResult = executeAnalysisPlan(validation.plan, mockDataset);
     expect(execResult.status).toBe('success');
 
-    const anomalies = execResult.result.filter(r => r['Anomaly Status'] === 'Anomaly');
-    expect(anomalies.length).toBeGreaterThanOrEqual(1);
-    expect(anomalies[0].Order_ID).toBe(1008);
+    const outliers = execResult.result.filter(r => r['Outlier Status'] === 'Statistical Outlier');
+    expect(outliers.length).toBeGreaterThanOrEqual(1);
+    expect(outliers[0].Order_ID).toBe(1008);
   });
 
   test('TEST 3: Find anomalies using Sales, Quantity and Customer_Rating.', async () => {
@@ -106,14 +106,14 @@ describe('Phase 11 — Advanced Anomaly Detection Tests', () => {
     expect(validation.reason).toContain('Order_ID is an identifier and cannot be used as an anomaly-detection feature.');
   });
 
-  test('TEST 6: Reuses Phase 7 IQR statistical outlier method', async () => {
+  test('TEST 6: Reuses Phase 7 IQR statistical outlier method without Anomaly Score', async () => {
     const execResult = executeAnalysisPlan({ operation: 'anomaly_detection', features: ['Sales', 'Quantity'] }, mockDataset);
     expect(execResult.metadata.operation).toBe('anomaly_detection');
     expect(execResult.metadata.method).toBe('IQR Statistical Outlier Detection');
     expect(execResult.metadata.iqrMultiplier).toBe(1.5);
 
-    expect(execResult.result[0]['Anomaly Status']).toBeDefined();
-    expect(execResult.result[0]['Anomaly Score']).toBeDefined();
+    expect(execResult.result[0]['Outlier Status']).toBeDefined();
+    expect(execResult.result[0]['Anomaly Score']).toBeUndefined();
   });
 
 });

@@ -139,7 +139,7 @@ function determineVisualization(executionResult, plan = null) {
     return {
       chartType: 'anomaly_detection',
       shouldRenderChart: true,
-      title: 'Statistical Anomaly Detection (Phase 7 IQR)',
+      title: 'Statistical Outlier Detection (Phase 7 IQR)',
       features: meta.features || [],
       featureX: meta.featureX || 'X',
       featureY: meta.featureY || 'Y',
