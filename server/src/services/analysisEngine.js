@@ -1541,6 +1541,269 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
       };
     }
 
+    case 'insight_analysis': {
+      const targetCol = plan.target_measure || plan.targetMeasure || plan.measure || plan.target || plan.column;
+      let dateCol = plan.date_column || plan.dateColumn;
+      let targetPeriod = plan.target_period || plan.targetPeriod;
+      let comparisonPeriod = plan.comparison_period || plan.comparisonPeriod;
+      let dims = Array.isArray(plan.dimensions) ? plan.dimensions : (plan.dimensions ? [plan.dimensions] : []);
+      const focusCol = plan.focus_column || plan.focusColumn;
+      const focusItem = plan.focus_item || plan.focusItem;
+
+      if (!targetCol) {
+        return {
+          status: 'cannot_answer',
+          operation: 'insight_analysis',
+          reason: 'Automated insight analysis requires a numerical target measure column.',
+          result: [],
+          metadata: { rowsAnalyzed }
+        };
+      }
+
+      // Auto-detect date column if missing
+      if (!dateCol && filteredRows.length > 0) {
+        const sampleRow = filteredRows[0];
+        const keys = Object.keys(sampleRow);
+        const dKey = keys.find(k => ['date', 'time', 'month', 'year', 'day', 'timestamp', 'created_at', 'order_date'].some(w => k.toLowerCase().includes(w)));
+        if (dKey) dateCol = dKey;
+      }
+
+      // Auto-detect dimensions if missing
+      if (dims.length === 0 && filteredRows.length > 0) {
+        const sampleRow = filteredRows[0];
+        const keys = Object.keys(sampleRow);
+        dims = keys.filter(k => {
+          const lower = k.toLowerCase().trim();
+          if (lower.includes('id') || lower === dateCol?.toLowerCase()) return false;
+          const val = getCellValue(sampleRow, k);
+          return typeof val === 'string' || isNaN(parseNumber(val));
+        });
+      }
+
+      // Extract valid observations by date / period
+      let invalidDatesCount = 0;
+      let missingTargetCount = 0;
+
+      const rowsByPeriodMap = new Map();
+      const allParsedRows = [];
+
+      filteredRows.forEach(row => {
+        const rawTarget = getCellValue(row, targetCol);
+        if (isMissingValue(rawTarget)) {
+          missingTargetCount++;
+          return;
+        }
+        const numTarget = parseNumber(rawTarget);
+        if (isNaN(numTarget)) {
+          missingTargetCount++;
+          return;
+        }
+
+        let pKey = '__ALL__';
+        if (dateCol) {
+          const rawDate = getCellValue(row, dateCol);
+          const parsedDate = parseDateValue(rawDate);
+          if (parsedDate) {
+            pKey = getTimeGroupKey(parsedDate, 'MONTH');
+          } else {
+            invalidDatesCount++;
+            return;
+          }
+        }
+
+        if (!rowsByPeriodMap.has(pKey)) {
+          rowsByPeriodMap.set(pKey, []);
+        }
+        const rowData = { ...row, _numTarget: numTarget, _pKey: pKey };
+        rowsByPeriodMap.get(pKey).push(rowData);
+        allParsedRows.push(rowData);
+      });
+
+      const sortedPeriods = Array.from(rowsByPeriodMap.keys()).sort((a, b) => String(a).localeCompare(String(b)));
+
+      // Determine Target Period & Comparison Period
+      let tPeriod = targetPeriod;
+      let cPeriod = comparisonPeriod;
+
+      if (sortedPeriods.length > 0 && sortedPeriods[0] !== '__ALL__') {
+        if (!tPeriod || !rowsByPeriodMap.has(tPeriod)) {
+          tPeriod = sortedPeriods[sortedPeriods.length - 1]; // Default to latest period
+        }
+
+        if (!cPeriod || !rowsByPeriodMap.has(cPeriod)) {
+          const tIdx = sortedPeriods.indexOf(tPeriod);
+          if (tIdx > 0) {
+            cPeriod = sortedPeriods[tIdx - 1]; // Previous chronological period
+          } else if (sortedPeriods.length > 1) {
+            cPeriod = sortedPeriods[1];
+          } else {
+            cPeriod = tPeriod;
+          }
+        }
+      } else {
+        tPeriod = '__ALL__';
+        cPeriod = '__ALL__';
+      }
+
+      const tRows = rowsByPeriodMap.get(tPeriod) || allParsedRows;
+      const cRows = rowsByPeriodMap.get(cPeriod) || allParsedRows;
+
+      const tVal = tRows.reduce((a, r) => a + r._numTarget, 0);
+      const cVal = cRows.reduce((a, r) => a + r._numTarget, 0);
+
+      const absChange = tVal - cVal;
+      const overallChangePercent = cVal !== 0 ? Number((((tVal - cVal) / Math.abs(cVal)) * 100).toFixed(2)) : 0;
+      const direction = absChange < 0 ? 'decrease' : (absChange > 0 ? 'increase' : 'stable');
+
+      // Group-Wise Contribution Analysis across dimensions
+      const dimensionBreakdowns = {};
+      const combinedResultRows = [];
+      const topContributorsList = [];
+
+      dims.forEach(dim => {
+        const tGroupSums = new Map();
+        const cGroupSums = new Map();
+
+        tRows.forEach(r => {
+          const gVal = isMissingValue(getCellValue(r, dim)) ? 'Unknown' : String(getCellValue(r, dim)).trim();
+          tGroupSums.set(gVal, (tGroupSums.get(gVal) || 0) + r._numTarget);
+        });
+
+        cRows.forEach(r => {
+          const gVal = isMissingValue(getCellValue(r, dim)) ? 'Unknown' : String(getCellValue(r, dim)).trim();
+          cGroupSums.set(gVal, (cGroupSums.get(gVal) || 0) + r._numTarget);
+        });
+
+        const allGroups = Array.from(new Set([...tGroupSums.keys(), ...cGroupSums.keys()]));
+        const groupStats = allGroups.map(g => {
+          const gTVal = tGroupSums.get(g) || 0;
+          const gCVal = cGroupSums.get(g) || 0;
+          const gAbsChange = gTVal - gCVal;
+          const gPctChange = gCVal !== 0 ? Number((((gTVal - gCVal) / Math.abs(gCVal)) * 100).toFixed(2)) : 0;
+          const contribPct = absChange !== 0 ? Number(((gAbsChange / absChange) * 100).toFixed(2)) : 0;
+
+          return {
+            Dimension: dim,
+            Group: g,
+            'Baseline Value': Number(gCVal.toFixed(2)),
+            'Target Value': Number(gTVal.toFixed(2)),
+            'Absolute Change': Number(gAbsChange.toFixed(2)),
+            'Group Growth (%)': gPctChange,
+            'Contribution to Total Change (%)': contribPct,
+            rawAbsChange: gAbsChange
+          };
+        });
+
+        // Sort groups by impact on change
+        if (absChange < 0) {
+          groupStats.sort((a, b) => a.rawAbsChange - b.rawAbsChange); // Most negative change first
+        } else {
+          groupStats.sort((a, b) => b.rawAbsChange - a.rawAbsChange); // Most positive change first
+        }
+
+        dimensionBreakdowns[dim] = groupStats;
+
+        groupStats.forEach(gs => {
+          const { rawAbsChange, ...cleanRow } = gs;
+          combinedResultRows.push(cleanRow);
+        });
+
+        if (groupStats.length > 0) {
+          const topImpact = groupStats[0];
+          topContributorsList.push({
+            dimension: dim,
+            group: topImpact.Group,
+            absoluteChange: topImpact['Absolute Change'],
+            growthPercent: topImpact['Group Growth (%)'],
+            contributionPercent: topImpact['Contribution to Total Change (%)']
+          });
+        }
+      });
+
+      // Supporting Correlation Evidence (Phase 10 integration)
+      const sampleRow = filteredRows[0] || {};
+      const numericCols = Object.keys(sampleRow).filter(k => {
+        if (k === targetCol) return false;
+        const lower = k.toLowerCase();
+        if (lower.includes('id') || lower.includes('code')) return false;
+        const val = getCellValue(sampleRow, k);
+        return !isNaN(parseNumber(val));
+      });
+
+      const correlationEvidence = [];
+      numericCols.forEach(otherCol => {
+        const calc = computePairwiseCorrelation(filteredRows, targetCol, otherCol);
+        if (calc.status === 'success' && Math.abs(calc.r) >= 0.1) {
+          correlationEvidence.push({
+            variable: otherCol,
+            pearsonR: calc.rFormatted,
+            rawR: calc.r,
+            direction: calc.direction,
+            strength: calc.strength,
+            observations: calc.observations
+          });
+        }
+      });
+      correlationEvidence.sort((a, b) => Math.abs(b.rawR) - Math.abs(a.rawR));
+
+      // Supporting Anomaly Evidence (Phase 11 IQR integration on target period)
+      const tTargetNumbers = tRows.map(r => r._numTarget).sort((a, b) => a - b);
+      let anomaliesInTargetPeriod = 0;
+      let outlierContext = null;
+
+      if (tTargetNumbers.length >= 4) {
+        const count = tTargetNumbers.length;
+        const getP = (arr, p) => arr[Math.floor((arr.length - 1) * p)];
+        const q1 = getP(tTargetNumbers, 0.25);
+        const q3 = getP(tTargetNumbers, 0.75);
+        const iqr = q3 - q1;
+        const lowerBound = q1 - 1.5 * iqr;
+        const upperBound = q3 + 1.5 * iqr;
+
+        tTargetNumbers.forEach(v => {
+          if (v < lowerBound || v > upperBound) anomaliesInTargetPeriod++;
+        });
+
+        if (anomaliesInTargetPeriod > 0) {
+          outlierContext = `${anomaliesInTargetPeriod} statistical outlier record(s) detected outside 1.5x IQR bounds (${Number(lowerBound.toFixed(2))} to ${Number(upperBound.toFixed(2))}) in ${tPeriod}.`;
+        }
+      }
+
+      resultData = combinedResultRows;
+
+      return {
+        status: 'success',
+        operation: 'insight_analysis',
+        columnsUsed: [dateCol, targetCol, ...dims].filter(Boolean),
+        result: resultData,
+        metadata: {
+          operation: 'insight_analysis',
+          targetMeasure: targetCol,
+          target: targetCol,
+          dateColumn: dateCol,
+          targetPeriod: tPeriod,
+          comparisonPeriod: cPeriod,
+          targetValue: Number(tVal.toFixed(2)),
+          comparisonValue: Number(cVal.toFixed(2)),
+          absoluteChange: Number(absChange.toFixed(2)),
+          overallChangePercent,
+          direction,
+          focusColumn: focusCol,
+          focusItem,
+          dimensions: dims,
+          topContributors: topContributorsList,
+          dimensionBreakdowns,
+          correlationEvidence,
+          anomalyEvidence: {
+            anomaliesDetected: anomaliesInTargetPeriod,
+            outlierContext
+          },
+          totalRecords: rows.length,
+          rowsAnalyzed: tRows.length + cRows.length
+        }
+      };
+    }
+
     default:
       throw new Error(`Unsupported engine operation '${operation}'.`);
   }

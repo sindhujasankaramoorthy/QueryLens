@@ -53,6 +53,7 @@ export default function ResultVisualization({ execution, validation, question, t
   const isCorrelationMatrix = operation === 'correlation_matrix';
   const isAnomalyDetection = operation === 'anomaly_detection';
   const isForecast = operation === 'forecast';
+  const isInsightAnalysis = operation === 'insight_analysis';
 
   const colX = metadata.columnX || firstRow.columnX;
   const colY = metadata.columnY || firstRow.columnY;
@@ -67,7 +68,7 @@ export default function ResultVisualization({ execution, validation, question, t
   const scatterColX = colX || (metadata.topPair ? metadata.topPair.columnX : 'Variable X');
   const scatterColY = colY || (metadata.topPair ? metadata.topPair.columnY : 'Variable Y');
 
-  const isTimeSeries = !isCorrelation && !isCorrelationMatrix && !isForecast && (operation === 'time_series' || operation === 'time_group' || Boolean(metadata?.dateColumn) || Boolean(validation?.plan?.granularity) || Boolean(validation?.plan?.timeUnit));
+  const isTimeSeries = !isCorrelation && !isCorrelationMatrix && !isForecast && !isInsightAnalysis && (operation === 'time_series' || operation === 'time_group' || Boolean(metadata?.dateColumn) || Boolean(validation?.plan?.granularity) || Boolean(validation?.plan?.timeUnit));
 
   // Auto detect xKey and yKey for non-correlation charts
   let xKey = metadata?.dateColumn || validation?.plan?.date_column || validation?.plan?.column || validation?.plan?.groupBy;
@@ -831,6 +832,214 @@ export default function ResultVisualization({ execution, validation, question, t
                 <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1rem', fontSize: '0.78rem', color: 'var(--text-muted)', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
                   <span>Method: <strong style={{ color: 'var(--primary)' }}>Linear Time-Index Regression</strong></span>
                   <span>Confidence Bounds: <strong style={{ color: 'var(--text-main)' }}>95% Standard Prediction Band</strong></span>
+                  <span>Calculation: <strong style={{ color: 'var(--accent-emerald)' }}>100% Deterministic & Grounded</strong></span>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* 5. Automated Insight & Root-Cause View (Phase 13) */}
+      {isInsightAnalysis && (
+        <div>
+          {/* Insight Summary Banner */}
+          <div
+            style={{
+              background: isDark ? 'linear-gradient(135deg, rgba(236, 72, 153, 0.12), rgba(168, 85, 247, 0.08))' : 'linear-gradient(135deg, rgba(236, 72, 153, 0.08), rgba(168, 85, 247, 0.05))',
+              border: '1px solid rgba(236, 72, 153, 0.3)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1.5rem',
+              marginBottom: '1.25rem'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Activity size={22} style={{ color: 'var(--accent-pink, #ec4899)' }} />
+                <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-pink, #ec4899)' }}>
+                  Automated Insight & Contribution Analysis ({formatLabel(metadata.targetMeasure)})
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: 'rgba(236, 72, 153, 0.15)', color: '#ec4899', border: '1px solid rgba(236, 72, 153, 0.3)' }}>
+                  Target: {metadata.targetPeriod || 'Latest Period'}
+                </span>
+                <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-violet)', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
+                  Baseline: {metadata.comparisonPeriod || 'Previous Period'}
+                </span>
+                <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: metadata.overallChangePercent >= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)', color: metadata.overallChangePercent >= 0 ? 'var(--accent-emerald)' : 'var(--accent-rose)', border: metadata.overallChangePercent >= 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(244, 63, 94, 0.3)' }}>
+                  Total Change: {metadata.overallChangePercent >= 0 ? '+' : ''}{metadata.overallChangePercent}% ({formatValue(metadata.absoluteChange)})
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.85rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.85rem' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Target Measure</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem' }}>{formatLabel(metadata.targetMeasure)}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Target Period Value</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.targetValue)}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Baseline Period Value</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.comparisonValue)}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Absolute Change</div>
+                <strong style={{ color: metadata.absoluteChange >= 0 ? 'var(--accent-emerald)' : 'var(--accent-rose)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>
+                  {metadata.absoluteChange >= 0 ? '+' : ''}{formatValue(metadata.absoluteChange)}
+                </strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Change Direction</div>
+                <strong style={{ color: metadata.direction === 'increase' ? 'var(--accent-emerald)' : 'var(--accent-rose)', fontSize: '0.95rem', textTransform: 'capitalize' }}>
+                  {metadata.direction || 'change'}
+                </strong>
+              </div>
+            </div>
+
+            {/* Top Driver Contributors Sub-card */}
+            {Array.isArray(metadata.topContributors) && metadata.topContributors.length > 0 && (
+              <div style={{ marginTop: '0.9rem', padding: '0.85rem 1rem', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.22)', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#ec4899', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Key Contributing Drivers (Largest Impact Sub-Groups):
+                </div>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.82rem' }}>
+                  {metadata.topContributors.map((tc, i) => (
+                    <div key={i} style={{ padding: '0.35rem 0.65rem', borderRadius: '6px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>{tc.dimension}: </span>
+                      <strong style={{ color: 'var(--text-main)' }}>{tc.group}</strong>
+                      <span style={{ color: tc.absoluteChange >= 0 ? 'var(--accent-emerald)' : 'var(--accent-rose)', fontFamily: 'var(--font-mono)', marginLeft: '0.35rem', fontWeight: 700 }}>
+                        {tc.absoluteChange >= 0 ? '+' : ''}{formatValue(tc.absoluteChange)} ({tc.contributionPercent >= 0 ? '+' : ''}{tc.contributionPercent}% of total)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Group Contribution Bar Chart */}
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <BarChart3 size={20} style={{ color: '#ec4899' }} />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                  Group-Wise Absolute Change by Dimension
+                </h4>
+              </div>
+              <span className="type-tag">Baseline ({metadata.comparisonPeriod || 'Previous'}) vs Target ({metadata.targetPeriod || 'Current'})</span>
+            </div>
+
+            <div style={{ width: '100%', height: 340, marginTop: '0.5rem' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={resultData.slice(0, 10)} margin={{ top: 15, right: 30, left: 10, bottom: 25 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                  <XAxis
+                    dataKey="Group"
+                    stroke={axisColor}
+                    tick={{ fill: axisColor, fontSize: 12 }}
+                    tickLine={{ stroke: axisColor }}
+                  />
+                  <YAxis
+                    stroke={axisColor}
+                    tick={{ fill: axisColor, fontSize: 12 }}
+                    tickFormatter={val => (typeof val === 'number' && Math.abs(val) >= 1000 ? `${(val / 1000).toFixed(0)}k` : val)}
+                  />
+                  <Tooltip
+                    contentStyle={{ background: tooltipBg, borderColor: tooltipBorder, borderRadius: '8px', color: tooltipTextColor }}
+                    formatter={(val, name) => [formatValue(val), formatLabel(name)]}
+                    labelFormatter={(label) => `Group: ${label}`}
+                  />
+                  <Legend />
+                  <Bar dataKey="Baseline Value" fill="#38bdf8" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Target Value" fill="#a855f7" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Group Contribution Breakdown Table */}
+          {(() => {
+            const tableColumns = Array.from(new Set(resultData.flatMap(r => Object.keys(r))));
+            return (
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Layers size={18} style={{ color: 'var(--primary)' }} />
+                    <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                      Contribution Analysis Breakdown ({resultData.length} Group Observations)
+                    </h4>
+                  </div>
+                  <span className="type-badge" style={{ background: 'var(--primary-glow)', color: 'var(--primary)', border: '1px solid var(--border-active)' }}>
+                    Ranked by Contribution Impact
+                  </span>
+                </div>
+
+                <div className="table-wrapper">
+                  <table className="profile-table">
+                    <thead>
+                      <tr>
+                        {tableColumns.map(key => (
+                          <th key={key} style={{ textAlign: typeof resultData[0]?.[key] === 'number' ? 'right' : 'left' }}>{formatLabel(key)}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resultData.map((row, idx) => (
+                        <tr key={idx}>
+                          {tableColumns.map((key, cIdx) => {
+                            const rawVal = row[key];
+                            return (
+                              <td
+                                key={cIdx}
+                                style={{
+                                  textAlign: typeof rawVal === 'number' ? 'right' : 'left',
+                                  fontFamily: typeof rawVal === 'number' ? 'var(--font-mono)' : 'inherit',
+                                  fontWeight: typeof rawVal === 'number' ? 700 : 500,
+                                  color: key === 'Absolute Change' ? (rawVal < 0 ? 'var(--accent-rose)' : 'var(--accent-emerald)') : cIdx === 0 ? 'var(--text-main)' : 'inherit'
+                                }}
+                              >
+                                {formatValue(rawVal)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Supporting Evidence Sub-card */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginTop: '1.25rem' }}>
+                  {Array.isArray(metadata.correlationEvidence) && metadata.correlationEvidence.length > 0 && (
+                    <div style={{ padding: '0.85rem 1rem', borderRadius: '8px', background: 'rgba(6, 182, 212, 0.08)', border: '1px solid rgba(6, 182, 212, 0.25)' }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--accent-cyan)', marginBottom: '0.35rem' }}>
+                        Supporting Correlation Evidence (Phase 10)
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Top Associated Measure: <strong style={{ color: 'var(--text-main)' }}>{metadata.correlationEvidence[0].variable}</strong> (r = {metadata.correlationEvidence[0].pearsonR}, {metadata.correlationEvidence[0].strength} {metadata.correlationEvidence[0].direction})
+                      </div>
+                    </div>
+                  )}
+
+                  {metadata.anomalyEvidence?.anomaliesDetected > 0 && (
+                    <div style={{ padding: '0.85rem 1rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--accent-amber)', marginBottom: '0.35rem' }}>
+                        Supporting Anomaly Evidence (Phase 11 IQR)
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        {metadata.anomalyEvidence.outlierContext || `${metadata.anomalyEvidence.anomaliesDetected} statistical outlier(s) detected in target period.`}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1rem', fontSize: '0.78rem', color: 'var(--text-muted)', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
+                  <span>Method: <strong style={{ color: 'var(--primary)' }}>Group-Wise Contribution & Drivers Analysis</strong></span>
+                  <span>Causality: <strong style={{ color: 'var(--accent-amber)' }}>Non-Causal Associative Evidence</strong></span>
                   <span>Calculation: <strong style={{ color: 'var(--accent-emerald)' }}>100% Deterministic & Grounded</strong></span>
                 </div>
               </div>

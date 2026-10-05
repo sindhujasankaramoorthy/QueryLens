@@ -61,6 +61,37 @@ function extractEvidenceNumbers(evidence) {
     if (bm.zeroActualsExcluded !== undefined) numbers.add(String(bm.zeroActualsExcluded));
   }
 
+  if (evidence?.metadata?.targetValue !== undefined) numbers.add(String(evidence.metadata.targetValue));
+  if (evidence?.metadata?.comparisonValue !== undefined) numbers.add(String(evidence.metadata.comparisonValue));
+  if (evidence?.metadata?.targetPeriod) {
+    const tNums = String(evidence.metadata.targetPeriod).match(/\d+/g);
+    if (tNums) tNums.forEach(n => numbers.add(n));
+  }
+  if (evidence?.metadata?.comparisonPeriod) {
+    const cNums = String(evidence.metadata.comparisonPeriod).match(/\d+/g);
+    if (cNums) cNums.forEach(n => numbers.add(n));
+  }
+  if (evidence?.metadata?.absoluteChange !== undefined) {
+    numbers.add(String(evidence.metadata.absoluteChange));
+    numbers.add(Math.abs(evidence.metadata.absoluteChange).toString());
+  }
+  if (Array.isArray(evidence?.metadata?.topContributors)) {
+    evidence.metadata.topContributors.forEach(tc => {
+      if (tc.absoluteChange !== undefined) {
+        numbers.add(String(tc.absoluteChange));
+        numbers.add(Math.abs(tc.absoluteChange).toString());
+      }
+      if (tc.growthPercent !== undefined) numbers.add(String(tc.growthPercent));
+      if (tc.contributionPercent !== undefined) {
+        numbers.add(String(tc.contributionPercent));
+        numbers.add(Math.abs(tc.contributionPercent).toString());
+      }
+    });
+  }
+  if (evidence?.metadata?.anomalyEvidence?.anomaliesDetected !== undefined) {
+    numbers.add(String(evidence.metadata.anomalyEvidence.anomaliesDetected));
+  }
+
   if (Array.isArray(evidence?.result)) {
     evidence.result.forEach(row => {
       Object.values(row).forEach(val => {
@@ -159,6 +190,38 @@ function generateDeterministicExplanation(evidence) {
 
   const firstRow = result[0];
   const keys = Object.keys(firstRow);
+
+  // Phase 13 Automated Insight & Root-Cause Result
+  if (operation === 'insight_analysis') {
+    const target = metadata.targetMeasure || metadata.target || 'Value';
+    const tPeriod = metadata.targetPeriod ? ` in ${metadata.targetPeriod}` : '';
+    const cPeriod = metadata.comparisonPeriod ? ` compared to ${metadata.comparisonPeriod}` : '';
+    const tVal = metadata.targetValue !== undefined ? formatNumberUS(metadata.targetValue) : 'N/A';
+    const cVal = metadata.comparisonValue !== undefined ? formatNumberUS(metadata.comparisonValue) : 'N/A';
+    const absChange = metadata.absoluteChange !== undefined ? formatNumberUS(metadata.absoluteChange) : 'N/A';
+    const changePct = metadata.overallChangePercent !== undefined ? metadata.overallChangePercent : 0;
+    const directionWord = changePct >= 0 ? 'increased' : 'decreased';
+
+    let exp = `${target} ${directionWord} by ${absChange} (${changePct >= 0 ? '+' : ''}${changePct}%)${tPeriod} (${tVal})${cPeriod} (${cVal}).`;
+
+    if (Array.isArray(metadata.topContributors) && metadata.topContributors.length > 0) {
+      const topImpacts = metadata.topContributors.map(tc => `${tc.dimension} '${tc.group}' contributed ${formatNumberUS(tc.absoluteChange)} (${tc.contributionPercent >= 0 ? '+' : ''}${tc.contributionPercent}% of total change)`).join('; ');
+      exp += ` Based on group-wise contribution analysis, top contributing drivers include: ${topImpacts}.`;
+    }
+
+    if (Array.isArray(metadata.correlationEvidence) && metadata.correlationEvidence.length > 0) {
+      const topCorr = metadata.correlationEvidence[0];
+      exp += ` Supporting correlation evidence: ${topCorr.variable} exhibits a ${topCorr.strength.toLowerCase()} ${topCorr.direction.toLowerCase()} association with ${target} (Pearson r = ${topCorr.pearsonR}).`;
+    }
+
+    if (metadata.anomalyEvidence?.anomaliesDetected > 0) {
+      exp += ` Supporting anomaly evidence: ${metadata.anomalyEvidence.anomaliesDetected} statistical outlier record(s) were detected outside 1.5x IQR bounds during target period.`;
+    }
+
+    exp += ` Note: Group-wise contribution analysis identifies associated statistical changes across sub-groups; it does not prove direct causality.`;
+
+    return exp;
+  }
 
   // 0. Forecasting Result (Phase 12)
   if (operation === 'forecast') {

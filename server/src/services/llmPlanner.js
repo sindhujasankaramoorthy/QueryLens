@@ -20,7 +20,7 @@ Your job is to translate a user's natural language question or follow-up into a 
 CRITICAL RULES:
 1. You are NOT the calculation engine. DO NOT return numerical answers or guessed figures.
 2. Only reference column names that EXACTLY exist in the provided schema. DO NOT invent columns.
-3. Supported operations: count, sum, average, median, min, max, group_aggregate, sort, filter, top_n, bottom_n, time_group, describe, correlation.
+3. Supported operations: count, sum, average, median, min, max, group_aggregate, sort, filter, top_n, bottom_n, time_group, describe, correlation, correlation_matrix, anomaly_detection, forecast, insight_analysis.
 4. Allowed aggregations: sum, average, median, min, max, count.
 5. If the question asks for correlation, relationship, or association between two numeric columns (e.g., "Is sales related to quantity?", "What is the correlation between sales and quantity?"), set operation to "correlation" and measures to an array of the two numeric column names, e.g. ["Sales", "Quantity"].
 6. If the question asks for results grouped or broken down by time or date (e.g., "by month", "monthly", "by year", "yearly", "trend", "over time", "by date", "per month", "by quarter"), you MUST return operation: "time_group". Set column to the date/datetime column name, measure to the target numerical measure column (e.g. Sales, Revenue), timeUnit to "month", "year", "day", or "quarter", and aggregation to the requested aggregation function (default "sum").
@@ -339,6 +339,99 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
         horizon: horizon,
         method: 'linear_regression',
         confidence_level: 0.95
+      }
+    };
+  }
+
+  // Phase 13 Automated Insight & Root-Cause Query Handler ("Why did sales decrease in October 2026?", "What factors contributed to the increase in sales?", "Why is the South region performing poorly?", "What are the main drivers of sales?")
+  const insightKeywords = [
+    'why did', 'why is', 'why sales', 'why quantity', 'why profit',
+    'what factors', 'contributed to', 'contribution', 'drivers of', 'driver', 'drivers',
+    'root cause', 'root-cause', 'explain the drop', 'explain the increase', 'explain the decrease', 'explain the change',
+    'performing poorly', 'performing well', 'why dropped', 'why decreased', 'why increased',
+    'what caused', 'main drivers', 'key drivers', 'reasons for'
+  ];
+  const isInsightQuery = insightKeywords.some(k => q.includes(k)) ||
+    (prevPlan?.operation === 'insight_analysis' && (matchedNumeric || q.includes('what about')) && !matchedCat);
+
+  if (isInsightQuery) {
+    // 1. Identifier Protection Check (e.g. "Why did Order_ID decrease?")
+    if (matchedId && (q.includes('why') || q.includes('factors') || q.includes('driver') || q.includes('contributed'))) {
+      const validMeasure = (matchedNumeric ? matchedNumeric.name : (numericCols[0] ? numericCols[0].name : 'Sales'));
+      return {
+        status: 'cannot_answer',
+        reason: `${matchedId.name} is an identifier column and cannot be used as a target measure for root-cause analysis. ${validMeasure} can be analyzed as a numerical measure.`
+      };
+    }
+
+    // 2. Target Measure Resolution
+    const targetMeasureCol = matchedNumeric || (prevMeasure ? numericCols.find(c => c.name === prevMeasure) : null) || numericCols[0];
+    if (!targetMeasureCol) {
+      return {
+        status: 'cannot_answer',
+        reason: 'Automated insight analysis requires a numerical target measure column.'
+      };
+    }
+
+    // 3. Date Column Resolution
+    const dateCol = matchedDate || dateCols[0];
+
+    // 4. Extract Target Period from Query if mentioned (e.g. October 2026, 2026-10, 2026, Q3)
+    let targetPeriod = null;
+    let comparisonPeriod = null;
+
+    const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+    const monthShorts = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    
+    const yearMatch = q.match(/\b(20\d\d)\b/);
+    const yearVal = yearMatch ? yearMatch[1] : null;
+
+    for (let mIdx = 0; mIdx < 12; mIdx++) {
+      const mName = monthNames[mIdx];
+      const mShort = monthShorts[mIdx];
+      if (q.includes(mName) || q.includes(mShort)) {
+        const monthNum = String(mIdx + 1).padStart(2, '0');
+        targetPeriod = yearVal ? `${yearVal}-${monthNum}` : `2026-${monthNum}`;
+        break;
+      }
+    }
+
+    if (!targetPeriod && yearVal) {
+      targetPeriod = yearVal;
+    }
+
+    // 5. Categorical Dimensions Extraction
+    const categoricalDimensions = catCols.map(c => c.name);
+
+    // 6. Focus Item resolution (e.g., "Why is South region performing poorly?")
+    let focusColumn = matchedCat ? matchedCat.name : null;
+    let focusItem = null;
+
+    if (focusColumn) {
+      const focusWords = ['south', 'north', 'east', 'west', 'central', 'furniture', 'technology', 'office supplies', 'electronics', 'clothing'];
+      const matchedWord = focusWords.find(w => q.includes(w));
+      if (matchedWord) {
+        focusItem = matchedWord.charAt(0).toUpperCase() + matchedWord.slice(1);
+      }
+    }
+
+    return {
+      status: 'success',
+      plan: {
+        operation: 'insight_analysis',
+        target_measure: targetMeasureCol.name,
+        targetMeasure: targetMeasureCol.name,
+        measure: targetMeasureCol.name,
+        target_period: targetPeriod,
+        targetPeriod: targetPeriod,
+        comparison_period: comparisonPeriod,
+        comparisonPeriod: comparisonPeriod,
+        dimensions: categoricalDimensions,
+        date_column: dateCol ? dateCol.name : null,
+        dateColumn: dateCol ? dateCol.name : null,
+        focus_column: focusColumn,
+        focus_item: focusItem,
+        supporting_analyses: ['period_comparison', 'group_contribution', 'correlation_evidence', 'anomaly_evidence']
       }
     };
   }

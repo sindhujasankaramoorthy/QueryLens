@@ -169,6 +169,21 @@ function determineVisualization(executionResult, plan = null) {
     };
   }
 
+  if (operation === 'insight_analysis') {
+    const meta = executionResult.metadata || {};
+    const targetCol = meta.targetMeasure || meta.target || 'Value';
+    return {
+      chartType: 'insight_analysis',
+      shouldRenderChart: true,
+      title: `Automated Insight & Contribution Analysis: ${targetCol}`,
+      subtitle: `Target Period: ${meta.targetPeriod || 'Latest'} vs Baseline: ${meta.comparisonPeriod || 'Previous'}`,
+      xKey: 'Group',
+      yKey: 'Absolute Change',
+      targetMeasure: targetCol,
+      chartData: resultData
+    };
+  }
+
   if (['group_aggregate', 'top_n', 'bottom_n', 'sort'].includes(operation)) {
     return {
       chartType: 'bar',

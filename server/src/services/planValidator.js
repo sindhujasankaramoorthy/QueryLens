@@ -22,7 +22,8 @@ const SUPPORTED_OPERATIONS = new Set([
   'correlation',
   'correlation_matrix',
   'anomaly_detection',
-  'forecast'
+  'forecast',
+  'insight_analysis'
 ]);
 
 const SUPPORTED_AGGREGATIONS = new Set([
@@ -635,6 +636,80 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
         horizon: horizon,
         method: 'linear_regression',
         confidence_level: 0.95,
+        filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
+      },
+      reason: null
+    };
+  }
+
+  if (operation === 'insight_analysis') {
+    const rawTarget = plan.target_measure || plan.targetMeasure || plan.measure || plan.target || plan.column;
+    if (!rawTarget) {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: 'Automated insight analysis requires a numerical target measure column.'
+      };
+    }
+
+    const type = getColType(rawTarget);
+    if (!type) {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: `Column '${rawTarget}' does not exist in the dataset schema.`
+      };
+    }
+
+    if (getColSemanticType(rawTarget) === 'identifier') {
+      const validMeasure = (schemaColumns || []).find(c => isNumericType(c.type) && getColSemanticType(c.name) !== 'identifier');
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: `${getCanonicalColName(rawTarget)} is an identifier column and cannot be used as a target measure for root-cause analysis. ${validMeasure ? validMeasure.name : 'Sales'} can be analyzed as a numerical measure.`
+      };
+    }
+
+    if (!isNumericType(type)) {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: `Automated insight analysis requires a numerical target measure. Column '${rawTarget}' is of non-numeric type '${type}'.`
+      };
+    }
+
+    let rawDate = plan.date_column || plan.dateColumn;
+    if (!rawDate) {
+      const dateSchemaCol = (schemaColumns || []).find(c => isDateType(c.type, c.name));
+      if (dateSchemaCol) rawDate = dateSchemaCol.name;
+    }
+
+    const rawDims = Array.isArray(plan.dimensions) ? plan.dimensions : (plan.dimensions ? [plan.dimensions] : []);
+    const validDims = rawDims.map(d => getCanonicalColName(d)).filter(Boolean);
+
+    // If no valid dimensions provided, default to all categorical columns
+    const finalDims = validDims.length > 0 ? validDims : (schemaColumns || []).filter(c => (c.type === 'categorical' || c.type === 'text') && getColSemanticType(c.name) !== 'identifier').map(c => c.name);
+
+    return {
+      isValid: true,
+      status: 'validated',
+      plan: {
+        operation: 'insight_analysis',
+        target_measure: getCanonicalColName(rawTarget),
+        targetMeasure: getCanonicalColName(rawTarget),
+        measure: getCanonicalColName(rawTarget),
+        target_period: plan.target_period || plan.targetPeriod || null,
+        comparison_period: plan.comparison_period || plan.comparisonPeriod || null,
+        dimensions: finalDims,
+        date_column: rawDate ? getCanonicalColName(rawDate) : null,
+        dateColumn: rawDate ? getCanonicalColName(rawDate) : null,
+        focus_column: plan.focus_column ? getCanonicalColName(plan.focus_column) : null,
+        focus_item: plan.focus_item || plan.focusItem || null,
+        supporting_analyses: ['period_comparison', 'group_contribution', 'correlation_evidence', 'anomaly_evidence'],
         filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
       },
       reason: null
