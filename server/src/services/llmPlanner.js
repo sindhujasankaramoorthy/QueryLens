@@ -282,12 +282,20 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
     };
   }
 
-  // Correlation Query Handler ("Is sales related to quantity?", "What is the correlation between sales and quantity?")
-  const isCorrelationQuery = ['correlation', 'related', 'relationship', 'association', 'connected to', 'correlated'].some(k => q.includes(k)) ||
-    (prevPlan?.operation === 'correlation' && (matchedNumeric || q.includes('what about')) && !matchedCat);
+  // Correlation Query Handler ("Is sales related to quantity?", "What factors are correlated with Sales?", "Show the correlation matrix.")
+  const isCorrelationQuery = ['correlation', 'related', 'relationship', 'association', 'connected to', 'correlated', 'matrix', 'factors'].some(k => q.includes(k)) ||
+    (prevPlan?.operation && ['correlation', 'correlation_matrix'].includes(prevPlan.operation) && (matchedNumeric || q.includes('what about')) && !matchedCat);
 
   if (isCorrelationQuery) {
-    // 1. Check for requested non-existent column (e.g. Profit, Revenue)
+    // 1. Identifier protection rule (e.g. Order_ID)
+    if (matchedId && (q.includes('correlation') || q.includes('related') || q.includes('relationship') || q.includes('correlated'))) {
+      return {
+        status: 'cannot_answer',
+        reason: `Cannot calculate correlation. ${matchedId.name} is classified as an identifier, not an analytical measure. Identifier columns are excluded from correlation analysis because their numerical values do not represent measurable quantities.`
+      };
+    }
+
+    // 2. Check for requested non-existent column (e.g. Profit, Revenue)
     if (q.includes('profit') && !schemaColumns.some(c => c.name.toLowerCase().includes('profit'))) {
       return {
         status: 'cannot_answer',
@@ -298,6 +306,34 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
       return {
         status: 'cannot_answer',
         reason: 'The column "Revenue" does not exist in the dataset schema.'
+      };
+    }
+
+    // 3. Full Correlation Matrix request ("Show correlation matrix", "Show correlations between all numerical variables")
+    const isMatrixQuery = q.includes('matrix') || q.includes('all numerical') || q.includes('all variables') || q.includes('between all') || (q.includes('which') && q.includes('correlated') && !matchedNumeric);
+    if (isMatrixQuery) {
+      return {
+        status: 'success',
+        plan: {
+          operation: 'correlation_matrix',
+          columns: numericCols.map(c => c.name),
+          method: 'pearson'
+        }
+      };
+    }
+
+    // 4. Target-variable correlation ("What factors are correlated with Sales?", "Which variables are correlated with Sales?")
+    const isTargetFactorQuery = (q.includes('factors') || q.includes('which variables') || q.includes('what variables') || q.includes('what is correlated with')) && matchedNumeric;
+    if (isTargetFactorQuery) {
+      return {
+        status: 'success',
+        plan: {
+          operation: 'correlation_matrix',
+          target_column: matchedNumeric.name,
+          targetColumn: matchedNumeric.name,
+          columns: numericCols.map(c => c.name),
+          method: 'pearson'
+        }
       };
     }
 
@@ -320,21 +356,27 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
         status: 'success',
         plan: {
           operation: 'correlation',
-          measures: [matchedNumerics[0].name, matchedNumerics[1].name]
+          column_x: matchedNumerics[0].name,
+          column_y: matchedNumerics[1].name,
+          measures: [matchedNumerics[0].name, matchedNumerics[1].name],
+          method: 'pearson'
         }
       };
     }
 
-    // Follow-up context handling: "What about Sales and Customer Rating?" or "What about Customer Rating?"
+    // Follow-up context handling
     if (matchedNumerics.length === 1) {
-      const prevMeasures = prevPlan?.measures || (prevPlan?.measure ? [prevPlan.measure] : []);
+      const prevMeasures = prevPlan?.measures || (prevPlan?.column_x && prevPlan?.column_y ? [prevPlan.column_x, prevPlan.column_y] : []);
       const firstCol = prevMeasures[0] && prevMeasures[0] !== matchedNumerics[0].name ? prevMeasures[0] : (numericCols[0] ? numericCols[0].name : null);
       if (firstCol && firstCol !== matchedNumerics[0].name) {
         return {
           status: 'success',
           plan: {
             operation: 'correlation',
-            measures: [firstCol, matchedNumerics[0].name]
+            column_x: firstCol,
+            column_y: matchedNumerics[0].name,
+            measures: [firstCol, matchedNumerics[0].name],
+            method: 'pearson'
           }
         };
       }
@@ -345,7 +387,10 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
         status: 'success',
         plan: {
           operation: 'correlation',
-          measures: [numericCols[0].name, numericCols[1].name]
+          column_x: numericCols[0].name,
+          column_y: numericCols[1].name,
+          measures: [numericCols[0].name, numericCols[1].name],
+          method: 'pearson'
         }
       };
     }

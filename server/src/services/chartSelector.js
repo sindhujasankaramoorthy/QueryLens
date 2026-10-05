@@ -103,6 +103,37 @@ function determineVisualization(executionResult, plan = null) {
     };
   }
 
+  if (operation === 'correlation') {
+    const meta = executionResult.metadata || {};
+    return {
+      chartType: 'scatter',
+      shouldRenderChart: true,
+      xKey: meta.columnX || plan?.column_x || plan?.column || 'x',
+      yKey: meta.columnY || plan?.column_y || plan?.measure || 'y',
+      title: `Scatter Plot: ${meta.columnY || 'Y'} vs ${meta.columnX || 'X'}`,
+      scatterPoints: meta.scatterPoints || [],
+      pearsonR: meta.pearsonR,
+      direction: meta.direction,
+      strength: meta.strength,
+      chartData: meta.scatterPoints || []
+    };
+  }
+
+  if (operation === 'correlation_matrix') {
+    const meta = executionResult.metadata || {};
+    return {
+      chartType: 'correlation_matrix',
+      shouldRenderChart: true,
+      title: meta.targetColumn ? `Factors Correlated with ${meta.targetColumn}` : 'Correlation Matrix',
+      columns: meta.columns || [],
+      matrixMap: meta.matrixMap || {},
+      targetColumn: meta.targetColumn || null,
+      targetFactors: meta.targetFactors || null,
+      topPair: meta.topPair || null,
+      chartData: resultData
+    };
+  }
+
   if (['group_aggregate', 'top_n', 'bottom_n', 'sort'].includes(operation)) {
     return {
       chartType: 'bar',

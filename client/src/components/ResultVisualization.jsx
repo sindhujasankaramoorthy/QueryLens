@@ -49,8 +49,23 @@ export default function ResultVisualization({ execution, validation, question, t
   const firstRow = resultData[0] || {};
   const keys = Object.keys(firstRow);
 
-  const isCorrelation = operation === 'correlation' || firstRow.correlation !== undefined;
-  const isTimeSeries = operation === 'time_series' || operation === 'time_group' || Boolean(metadata?.dateColumn) || Boolean(validation?.plan?.granularity) || Boolean(validation?.plan?.timeUnit);
+  const isCorrelation = operation === 'correlation' || firstRow.correlation !== undefined || firstRow.pearsonR !== undefined;
+  const isCorrelationMatrix = operation === 'correlation_matrix';
+
+  const colX = metadata.columnX || firstRow.columnX;
+  const colY = metadata.columnY || firstRow.columnY;
+  const pearsonR = metadata.pearsonR !== undefined ? metadata.pearsonR : firstRow.pearsonR !== undefined ? firstRow.pearsonR : firstRow.correlation;
+  const rawR = metadata.rawR !== undefined ? metadata.rawR : firstRow.rawR !== undefined ? firstRow.rawR : pearsonR;
+  const direction = metadata.direction || firstRow.direction || (rawR > 0 ? 'Positive' : rawR < 0 ? 'Negative' : 'No linear relationship');
+  const strength = metadata.strength || firstRow.strength || 'Moderate';
+  const obsCount = metadata.observations || firstRow.observations || metadata.rowsAnalyzed;
+  const missingPairsCount = metadata.missingPairsExcluded !== undefined ? metadata.missingPairsExcluded : metadata.missingValuesIgnored || 0;
+
+  const scatterData = metadata.scatterPoints || (metadata.topPair ? metadata.topPair.scatterPoints : []);
+  const scatterColX = colX || (metadata.topPair ? metadata.topPair.columnX : 'Variable X');
+  const scatterColY = colY || (metadata.topPair ? metadata.topPair.columnY : 'Variable Y');
+
+  const isTimeSeries = !isCorrelation && !isCorrelationMatrix && (operation === 'time_series' || operation === 'time_group' || Boolean(metadata?.dateColumn) || Boolean(validation?.plan?.granularity) || Boolean(validation?.plan?.timeUnit));
 
   // Auto detect xKey and yKey for non-correlation charts
   let xKey = metadata?.dateColumn || validation?.plan?.date_column || validation?.plan?.column || validation?.plan?.groupBy;
@@ -73,8 +88,8 @@ export default function ResultVisualization({ execution, validation, question, t
     yKey = keys.find(k => k !== xKey && k !== 'Growth (%)' && typeof firstRow[k] === 'number') || keys.find(k => typeof firstRow[k] === 'number');
   }
 
-  const isScalar = !isCorrelation && !isTimeSeries && resultData.length === 1 && (keys.length === 1 || ['count', 'sum', 'average', 'median', 'min', 'max', 'describe'].includes(operation));
-  const shouldChart = !isScalar && !isCorrelation && resultData.length > 1 && Boolean(yKey);
+  const isScalar = !isCorrelation && !isCorrelationMatrix && !isTimeSeries && resultData.length === 1 && (keys.length === 1 || ['count', 'sum', 'average', 'median', 'min', 'max', 'describe'].includes(operation));
+  const shouldChart = !isScalar && !isCorrelation && !isCorrelationMatrix && resultData.length > 1 && Boolean(yKey);
 
   // Theme-aware color variables for Recharts
   const isDark = theme === 'dark';
@@ -100,8 +115,8 @@ export default function ResultVisualization({ execution, validation, question, t
 
   return (
     <div style={{ marginTop: '1.25rem' }}>
-      {/* 1. Correlation Analysis Result Card */}
-      {isCorrelation ? (
+      {/* 1. Pairwise Correlation Analysis Result Card */}
+      {isCorrelation && (
         <div>
           <div
             style={{
@@ -112,41 +127,52 @@ export default function ResultVisualization({ execution, validation, question, t
               marginBottom: '1.25rem'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}>
-              <Activity size={22} style={{ color: 'var(--accent-violet)' }} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-violet)' }}>
-                Pearson Correlation Coefficient (r)
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Activity size={22} style={{ color: 'var(--accent-violet)' }} />
+                <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-violet)' }}>
+                  Pearson Correlation Analysis
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: 'rgba(139, 92, 246, 0.15)', color: 'var(--accent-violet)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+                  Direction: {direction}
+                </span>
+                <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: 'rgba(6, 182, 212, 0.15)', color: 'var(--accent-cyan)', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
+                  Strength: {strength}
+                </span>
+              </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '1rem', marginBottom: '0.75rem' }}>
               <div style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--text-main)' }}>
-                {firstRow.correlation >= 0 ? `+${firstRow.correlation}` : firstRow.correlation}
+                {rawR >= 0 ? `+${typeof pearsonR === 'number' ? pearsonR.toFixed(2) : pearsonR}` : (typeof pearsonR === 'number' ? pearsonR.toFixed(2) : pearsonR)}
               </div>
               <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                {firstRow.columnX} vs {firstRow.columnY}
+                {colX} vs {colY}
               </div>
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem', fontSize: '0.8rem', color: 'var(--text-muted)', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem' }}>
-              <span>Paired Observations Used: <strong style={{ color: 'var(--text-main)' }}>{firstRow.observations || metadata.rowsAnalyzed}</strong></span>
-              <span>Missing Rows Excluded: <strong style={{ color: 'var(--text-main)' }}>{metadata.missingValuesIgnored}</strong></span>
-              <span>Method: <strong style={{ color: 'var(--primary)', textTransform: 'uppercase' }}>{firstRow.method || 'pearson'}</strong></span>
-              <span>Engine: <strong style={{ color: 'var(--accent-emerald)' }}>Pure JS Deterministic</strong></span>
+              <span>Rows Analyzed: <strong style={{ color: 'var(--text-main)' }}>{metadata.rowsAnalyzed}</strong></span>
+              <span>Paired Observations: <strong style={{ color: 'var(--text-main)' }}>{obsCount}</strong></span>
+              <span>Missing Pairs Excluded: <strong style={{ color: 'var(--text-main)' }}>{missingPairsCount}</strong></span>
+              <span>Method: <strong style={{ color: 'var(--primary)', textTransform: 'uppercase' }}>Pearson</strong></span>
+              <span>Calculation: <strong style={{ color: 'var(--accent-emerald)' }}>100% Verifiable Deterministic</strong></span>
             </div>
           </div>
 
           {/* Scatter Plot Chart */}
-          {metadata.scatterPoints && metadata.scatterPoints.length > 0 && (
+          {scatterData && scatterData.length > 0 && (
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <ScatterIcon size={20} style={{ color: 'var(--secondary)' }} />
                   <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                    Scatter Plot ({firstRow.columnX} vs {firstRow.columnY})
+                    Scatter Plot ({scatterColX} vs {scatterColY})
                   </h4>
                 </div>
-                <span className="type-tag">Scatter Plot ({metadata.scatterPoints.length} points)</span>
+                <span className="type-tag">Scatter Plot ({scatterData.length} points | Pearson r = {rawR >= 0 ? `+${typeof pearsonR === 'number' ? pearsonR.toFixed(2) : pearsonR}` : pearsonR})</span>
               </div>
 
               <div style={{ width: '100%', height: 320, marginTop: '0.5rem' }}>
@@ -155,35 +181,212 @@ export default function ResultVisualization({ execution, validation, question, t
                     <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                     <XAxis
                       dataKey="x"
-                      name={firstRow.columnX}
+                      name={scatterColX}
                       type="number"
                       stroke={axisColor}
                       tick={{ fill: axisColor, fontSize: 12 }}
                       tickLine={{ stroke: axisColor }}
-                      label={{ value: formatLabel(firstRow.columnX), position: 'insideBottom', offset: -15, fill: axisColor, fontSize: 12 }}
+                      label={{ value: formatLabel(scatterColX), position: 'insideBottom', offset: -15, fill: axisColor, fontSize: 12 }}
                     />
                     <YAxis
                       dataKey="y"
-                      name={firstRow.columnY}
+                      name={scatterColY}
                       type="number"
                       stroke={axisColor}
                       tick={{ fill: axisColor, fontSize: 12 }}
                       tickLine={{ stroke: axisColor }}
-                      label={{ value: formatLabel(firstRow.columnY), angle: -90, position: 'insideLeft', fill: axisColor, fontSize: 12 }}
+                      label={{ value: formatLabel(scatterColY), angle: -90, position: 'insideLeft', fill: axisColor, fontSize: 12 }}
                     />
                     <Tooltip
                       cursor={{ strokeDasharray: '3 3' }}
                       contentStyle={{ background: tooltipBg, borderColor: tooltipBorder, borderRadius: '8px', color: tooltipTextColor }}
-                      formatter={(val, name) => [formatValue(val), name === 'x' ? formatLabel(firstRow.columnX) : formatLabel(firstRow.columnY)]}
+                      formatter={(val, name) => [formatValue(val), name === 'x' ? formatLabel(scatterColX) : formatLabel(scatterColY)]}
                     />
-                    <Scatter name="Observations" data={metadata.scatterPoints} fill="var(--primary)" opacity={0.85} />
+                    <Scatter name="Observations" data={scatterData} fill="var(--primary)" opacity={0.85} />
                   </ScatterChart>
                 </ResponsiveContainer>
               </div>
             </div>
           )}
         </div>
-      ) : null}
+      )}
+
+      {/* 2. Correlation Matrix & Target Factors Result View */}
+      {isCorrelationMatrix && (
+        <div>
+          {/* Target Variable Factors Card */}
+          {metadata.targetColumn && metadata.targetFactors && (
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                <Activity size={20} style={{ color: 'var(--accent-cyan)' }} />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                  Factors Correlated with {metadata.targetColumn}
+                </h4>
+              </div>
+
+              <div className="table-wrapper">
+                <table className="profile-table">
+                  <thead>
+                    <tr>
+                      <th>Variable</th>
+                      <th style={{ textAlign: 'right' }}>Pearson r</th>
+                      <th>Direction</th>
+                      <th>Strength</th>
+                      <th style={{ textAlign: 'right' }}>Observations</th>
+                      <th style={{ textAlign: 'right' }}>Missing Pairs Excluded</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metadata.targetFactors.map((tf, idx) => (
+                      <tr key={idx}>
+                        <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>{tf.variable}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 800, color: tf.rawR > 0 ? 'var(--accent-emerald)' : tf.rawR < 0 ? 'var(--accent-rose)' : 'inherit' }}>
+                          {tf.pearsonR}
+                        </td>
+                        <td>
+                          <span style={{ padding: '0.2rem 0.5rem', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 700, background: tf.rawR > 0 ? 'rgba(16, 185, 129, 0.15)' : tf.rawR < 0 ? 'rgba(244, 63, 94, 0.15)' : 'rgba(148, 163, 184, 0.15)', color: tf.rawR > 0 ? 'var(--accent-emerald)' : tf.rawR < 0 ? 'var(--accent-rose)' : 'var(--text-muted)' }}>
+                            {tf.direction}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{tf.strength}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{tf.observations}</td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{tf.missingPairsExcluded}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Full Matrix Heatmap Table */}
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Layers size={18} style={{ color: 'var(--primary)' }} />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                  Correlation Matrix Heatmap
+                </h4>
+              </div>
+              <span className="type-tag">Pearson Correlation Matrix ({metadata.columns?.length || 0} Measures)</span>
+            </div>
+
+            <div className="table-wrapper">
+              <table className="profile-table" style={{ borderCollapse: 'separate', borderSpacing: '2px' }}>
+                <thead>
+                  <tr>
+                    <th>Measure</th>
+                    {(metadata.columns || keys.filter(k => k !== 'Variable')).map(c => (
+                      <th key={c} style={{ textAlign: 'center' }}>{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {resultData.map((row, idx) => (
+                    <tr key={idx}>
+                      <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>{row.Variable || keys[idx]}</td>
+                      {(metadata.columns || keys.filter(k => k !== 'Variable')).map(c => {
+                        const val = row[c];
+                        const numVal = typeof val === 'number' ? val : parseFloat(val);
+                        const isDiag = row.Variable === c || numVal === 1;
+
+                        let cellBg = 'transparent';
+                        let textColor = 'var(--text-main)';
+
+                        if (!isNaN(numVal)) {
+                          if (isDiag) {
+                            cellBg = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)';
+                            textColor = 'var(--text-muted)';
+                          } else if (numVal > 0) {
+                            const alpha = Math.min(0.35, Math.max(0.1, numVal * 0.35));
+                            cellBg = `rgba(16, 185, 129, ${alpha})`;
+                            textColor = 'var(--accent-emerald)';
+                          } else if (numVal < 0) {
+                            const alpha = Math.min(0.35, Math.max(0.1, Math.abs(numVal) * 0.35));
+                            cellBg = `rgba(244, 63, 94, ${alpha})`;
+                            textColor = 'var(--accent-rose)';
+                          }
+                        }
+
+                        return (
+                          <td
+                            key={c}
+                            style={{
+                              textAlign: 'center',
+                              fontFamily: 'var(--font-mono)',
+                              fontWeight: isDiag ? 600 : 800,
+                              background: cellBg,
+                              color: textColor,
+                              borderRadius: '4px',
+                              padding: '0.6rem 0.5rem'
+                            }}
+                          >
+                            {typeof numVal === 'number' && !isNaN(numVal) ? (numVal >= 0 ? `+${numVal.toFixed(2)}` : numVal.toFixed(2)) : String(val)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1rem', fontSize: '0.78rem', color: 'var(--text-muted)', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
+              <span>Rows Analyzed: <strong style={{ color: 'var(--text-main)' }}>{metadata.rowsAnalyzed}</strong></span>
+              <span>Missing Pairs Excluded: <strong style={{ color: 'var(--text-main)' }}>{missingPairsCount}</strong></span>
+              <span>Method: <strong style={{ color: 'var(--primary)', textTransform: 'uppercase' }}>Pearson Correlation Matrix</strong></span>
+              <span>Calculation: <strong style={{ color: 'var(--accent-emerald)' }}>Symmetric & Deterministic</strong></span>
+            </div>
+          </div>
+
+          {/* Scatter Plot for Top Correlated Pair if available */}
+          {scatterData && scatterData.length > 0 && (
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <ScatterIcon size={20} style={{ color: 'var(--secondary)' }} />
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                    Top Pair Scatter Plot ({scatterColX} vs {scatterColY})
+                  </h4>
+                </div>
+                <span className="type-tag">Scatter Plot ({scatterData.length} points)</span>
+              </div>
+
+              <div style={{ width: '100%', height: 320, marginTop: '0.5rem' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart margin={{ top: 20, right: 30, left: 10, bottom: 25 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                    <XAxis
+                      dataKey="x"
+                      name={scatterColX}
+                      type="number"
+                      stroke={axisColor}
+                      tick={{ fill: axisColor, fontSize: 12 }}
+                      tickLine={{ stroke: axisColor }}
+                      label={{ value: formatLabel(scatterColX), position: 'insideBottom', offset: -15, fill: axisColor, fontSize: 12 }}
+                    />
+                    <YAxis
+                      dataKey="y"
+                      name={scatterColY}
+                      type="number"
+                      stroke={axisColor}
+                      tick={{ fill: axisColor, fontSize: 12 }}
+                      tickLine={{ stroke: axisColor }}
+                      label={{ value: formatLabel(scatterColY), angle: -90, position: 'insideLeft', fill: axisColor, fontSize: 12 }}
+                    />
+                    <Tooltip
+                      cursor={{ strokeDasharray: '3 3' }}
+                      contentStyle={{ background: tooltipBg, borderColor: tooltipBorder, borderRadius: '8px', color: tooltipTextColor }}
+                      formatter={(val, name) => [formatValue(val), name === 'x' ? formatLabel(scatterColX) : formatLabel(scatterColY)]}
+                    />
+                    <Scatter name="Observations" data={scatterData} fill="var(--primary)" opacity={0.85} />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 2. Time Series Summary Banner (Phase 9) */}
       {isTimeSeries && (

@@ -20,26 +20,18 @@ function extractEvidenceNumbers(evidence) {
   if (evidence?.metadata?.rowsAnalyzed !== undefined) {
     numbers.add(String(evidence.metadata.rowsAnalyzed));
   }
-  if (evidence?.metadata?.missingValuesIgnored !== undefined) {
-    numbers.add(String(evidence.metadata.missingValuesIgnored));
+  if (evidence?.metadata?.missingPairsExcluded !== undefined) {
+    numbers.add(String(evidence.metadata.missingPairsExcluded));
   }
-  if (evidence?.metadata?.invalidDatesExcluded !== undefined) {
-    numbers.add(String(evidence.metadata.invalidDatesExcluded));
+  if (evidence?.metadata?.pearsonR !== undefined) {
+    numbers.add(String(evidence.metadata.pearsonR));
+    numbers.add(Math.abs(evidence.metadata.pearsonR).toString());
+    numbers.add(Number(evidence.metadata.pearsonR).toFixed(2));
   }
-  if (evidence?.metadata?.slope !== undefined) {
-    numbers.add(String(evidence.metadata.slope));
-  }
-  if (evidence?.metadata?.netChangePercent !== undefined && evidence.metadata.netChangePercent !== null) {
-    numbers.add(String(evidence.metadata.netChangePercent));
-    numbers.add(Math.abs(evidence.metadata.netChangePercent).toString());
-  }
-
-  if (evidence?.metadata?.relativeSlope !== undefined) {
-    numbers.add(String(evidence.metadata.relativeSlope));
-    numbers.add(Math.abs(evidence.metadata.relativeSlope).toString());
-  }
-  if (evidence?.metadata?.r2 !== undefined) {
-    numbers.add(String(evidence.metadata.r2));
+  if (evidence?.metadata?.rawR !== undefined) {
+    numbers.add(String(evidence.metadata.rawR));
+    numbers.add(Math.abs(evidence.metadata.rawR).toString());
+    numbers.add(Number(evidence.metadata.rawR).toFixed(2));
   }
 
   if (Array.isArray(evidence?.result)) {
@@ -50,14 +42,28 @@ function extractEvidenceNumbers(evidence) {
           numbers.add(val.toString());
           numbers.add(val.toLocaleString('en-US'));
           numbers.add(val.toLocaleString());
+          numbers.add(Math.abs(val).toString());
           if (Number.isInteger(val)) {
             numbers.add(String(val));
           } else {
             numbers.add(val.toFixed(2));
             numbers.add(val.toFixed(4));
+            numbers.add(Math.abs(val).toFixed(2));
           }
         }
       });
+    });
+  }
+
+  if (Array.isArray(evidence?.metadata?.targetFactors)) {
+    evidence.metadata.targetFactors.forEach(tf => {
+      if (tf.rawR !== undefined) {
+        numbers.add(String(tf.rawR));
+        numbers.add(Math.abs(tf.rawR).toString());
+        numbers.add(Number(tf.rawR).toFixed(2));
+      }
+      if (tf.observations !== undefined) numbers.add(String(tf.observations));
+      if (tf.missingPairsExcluded !== undefined) numbers.add(String(tf.missingPairsExcluded));
     });
   }
 
@@ -123,7 +129,49 @@ function generateDeterministicExplanation(evidence) {
   const firstRow = result[0];
   const keys = Object.keys(firstRow);
 
-  // 1. Single scalar result (e.g. Total Sales = 723,000 or Average Quantity = 14.15)
+  // 1. Correlation Matrix Result
+  if (operation === 'correlation_matrix') {
+    const targetCol = metadata.targetColumn;
+    const factors = metadata.targetFactors;
+
+    if (targetCol && Array.isArray(factors) && factors.length > 0) {
+      const topFactor = factors[0];
+      const factorSummaries = factors.map(f => `${f.variable} (r = ${f.pearsonR}, ${f.strength} ${f.direction})`).join('; ');
+      return `For ${targetCol}, numerical factors are evaluated by Pearson correlation: ${factorSummaries}. ${topFactor.variable} shows the strongest relationship. Correlation indicates association, not causation.`;
+    }
+
+    const colsList = (metadata.columns || []).join(', ');
+    return `Correlation matrix calculated across ${metadata.columns?.length || 0} numerical measures (${colsList}) using Pearson correlation directly from raw data. Diagonal values are 1.00 representing perfect self-correlation. Correlation indicates association, not causation.`;
+  }
+
+  // 2. Pairwise Correlation Result
+  if (operation === 'correlation' || firstRow.correlation !== undefined || firstRow.pearsonR !== undefined) {
+    const colX = firstRow.columnX || metadata.columnX || 'Variable X';
+    const colY = firstRow.columnY || metadata.columnY || 'Variable Y';
+    const rVal = firstRow.pearsonR !== undefined ? firstRow.pearsonR : (firstRow.correlation !== undefined ? firstRow.correlation : metadata.pearsonR);
+    const rawR = firstRow.rawR !== undefined ? firstRow.rawR : (metadata.rawR !== undefined ? metadata.rawR : rVal);
+    const direction = firstRow.direction || metadata.direction || (rawR > 0 ? 'Positive' : rawR < 0 ? 'Negative' : 'No linear relationship');
+    const strength = (firstRow.strength || metadata.strength || 'Moderate').toLowerCase();
+    const obs = firstRow.observations || metadata.observations || rowsCount;
+
+    const sign = rawR >= 0 ? '+' : '';
+    const rFormatted = `${sign}${typeof rVal === 'number' ? rVal : rVal}`;
+
+    let interpText = '';
+    if (strength === 'very weak' || strength === 'weak') {
+      interpText = `The relationship is relatively weak, so ${colX} has limited linear association with ${colY} in this dataset.`;
+    } else if (rawR > 0) {
+      interpText = `This means higher ${colX} values tend to be associated with higher ${colY} values in this dataset.`;
+    } else if (rawR < 0) {
+      interpText = `Higher ${colX} values tend to be associated with lower ${colY} values in this dataset.`;
+    } else {
+      interpText = `There is no apparent linear relationship between ${colX} and ${colY}.`;
+    }
+
+    return `${colX} and ${colY} show a ${strength} ${direction.toLowerCase()} linear relationship (Pearson r = ${rFormatted}, based on ${obs} paired observations). ${interpText} Correlation does not imply causation.`;
+  }
+
+  // 3. Single scalar result (e.g. Total Sales = 723,000 or Average Quantity = 14.15)
   if (result.length === 1 && keys.length === 1) {
     const keyName = keys[0].replace(/_/g, ' ');
     const rawVal = firstRow[keys[0]];
@@ -133,7 +181,7 @@ function generateDeterministicExplanation(evidence) {
     return `${opLabel} ${keyName} across the ${rowsCount} analyzed records is ${formattedVal}.`;
   }
 
-  // 2. Grouped / Aggregated result (e.g., Region with highest sales or Top 3 products)
+  // 4. Grouped / Aggregated result (e.g., Region with highest sales or Top 3 products)
   if (['group_aggregate', 'top_n', 'bottom_n', 'sort'].includes(operation) || (result.length > 1 && !operation.includes('time'))) {
     const xKey = keys.find(k => typeof firstRow[k] !== 'number') || keys[0];
     const yKey = keys.find(k => k !== xKey && typeof firstRow[k] === 'number') || keys[1];
@@ -151,7 +199,7 @@ function generateDeterministicExplanation(evidence) {
     return `${topItem} generated the highest ${cleanYKey} at ${topVal} among ${result.length} ${cleanXKey} categories analyzed across ${rowsCount} records.`;
   }
 
-  // 3. Time Series Result (e.g. Monthly sales)
+  // 5. Time Series Result (e.g. Monthly sales)
   if (operation === 'time_series' || operation === 'time_group' || plan.granularity || plan.timeUnit) {
     const dateCol = metadata.dateColumn || keys.find(k => typeof firstRow[k] !== 'number') || keys[0];
     const measureCol = metadata.measureColumn || keys.find(k => k !== dateCol && typeof firstRow[k] === 'number') || keys[1];

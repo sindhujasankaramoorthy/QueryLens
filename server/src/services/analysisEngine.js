@@ -201,6 +201,114 @@ function getTimeGroupKey(val, timeUnit = 'month') {
 }
 
 /**
+ * Helper to compute correlation strength and direction according to Phase 10 rules
+ */
+function getCorrelationStrengthAndDirection(r) {
+  const absR = Math.abs(r);
+  let strength = 'Very Weak';
+  if (absR >= 0.80) {
+    strength = 'Very Strong';
+  } else if (absR >= 0.60) {
+    strength = 'Strong';
+  } else if (absR >= 0.40) {
+    strength = 'Moderate';
+  } else if (absR >= 0.20) {
+    strength = 'Weak';
+  } else {
+    strength = 'Very Weak';
+  }
+
+  let direction = 'No linear relationship';
+  if (r > 0) {
+    direction = 'Positive';
+  } else if (r < 0) {
+    direction = 'Negative';
+  }
+
+  return { strength, direction, absR };
+}
+
+/**
+ * Helper to compute pairwise Pearson correlation between two numerical columns
+ */
+function computePairwiseCorrelation(rows, colX, colY) {
+  let missingPairsExcluded = 0;
+  const pairs = [];
+
+  rows.forEach(row => {
+    const valX = getCellValue(row, colX);
+    const valY = getCellValue(row, colY);
+
+    if (isMissingValue(valX) || isMissingValue(valY)) {
+      missingPairsExcluded++;
+      return;
+    }
+
+    const numX = parseNumber(valX);
+    const numY = parseNumber(valY);
+
+    if (isNaN(numX) || isNaN(numY)) {
+      missingPairsExcluded++;
+      return;
+    }
+
+    pairs.push({ x: numX, y: numY });
+  });
+
+  const observations = pairs.length;
+  if (observations < 2) {
+    return {
+      status: 'insufficient_data',
+      message: 'Correlation cannot be reliably calculated because there are insufficient valid paired observations.',
+      observations,
+      missingPairsExcluded
+    };
+  }
+
+  const meanX = pairs.reduce((sum, p) => sum + p.x, 0) / observations;
+  const meanY = pairs.reduce((sum, p) => sum + p.y, 0) / observations;
+
+  let sumCov = 0;
+  let sumVarX = 0;
+  let sumVarY = 0;
+
+  pairs.forEach(p => {
+    const diffX = p.x - meanX;
+    const diffY = p.y - meanY;
+    sumCov += diffX * diffY;
+    sumVarX += diffX * diffX;
+    sumVarY += diffY * diffY;
+  });
+
+  if (sumVarX === 0 || sumVarY === 0) {
+    return {
+      status: 'zero_variance',
+      message: 'Correlation undefined because one variable has zero variance.',
+      observations,
+      missingPairsExcluded
+    };
+  }
+
+  let r = sumCov / (Math.sqrt(sumVarX) * Math.sqrt(sumVarY));
+  if (r > 1) r = 1;
+  if (r < -1) r = -1;
+
+  const rFormatted = Number(r.toFixed(4));
+  const classification = getCorrelationStrengthAndDirection(r);
+
+  return {
+    status: 'success',
+    r,
+    rFormatted,
+    rDisplay: (r >= 0 ? '+' : '') + r.toFixed(2),
+    observations,
+    missingPairsExcluded,
+    pairs,
+    ...classification
+  };
+}
+
+/**
  * Main Deterministic Plan Execution Function
  */
 function executeAnalysisPlan(plan, rows) {
@@ -697,92 +805,60 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
     }
 
     case 'correlation': {
-      let colX = null;
-      let colY = null;
-      if (Array.isArray(plan.measures) && plan.measures.length >= 2) {
-        colX = plan.measures[0];
-        colY = plan.measures[1];
-      } else {
-        colX = plan.column;
-        colY = plan.measure;
+      let colX = plan.column_x || plan.columnX;
+      let colY = plan.column_y || plan.columnY;
+
+      if (!colX || !colY) {
+        if (Array.isArray(plan.measures) && plan.measures.length >= 2) {
+          colX = plan.measures[0];
+          colY = plan.measures[1];
+        } else if (plan.column && plan.measure) {
+          colX = plan.column;
+          colY = plan.measure;
+        }
       }
 
       if (!colX || !colY) {
-        throw new Error('Correlation analysis requires two numeric column measures.');
+        throw new Error('Correlation analysis requires two numerical measure columns.');
       }
 
-      const pairs = [];
-      filteredRows.forEach(row => {
-        const valX = getCellValue(row, colX);
-        const valY = getCellValue(row, colY);
+      const calc = computePairwiseCorrelation(filteredRows, colX, colY);
 
-        if (isMissingValue(valX) || isMissingValue(valY)) {
-          missingValuesIgnored++;
-          return;
-        }
-
-        const numX = parseNumber(valX);
-        const numY = parseNumber(valY);
-
-        if (isNaN(numX) || isNaN(numY)) {
-          missingValuesIgnored++;
-          return;
-        }
-
-        pairs.push({ x: numX, y: numY });
-      });
-
-      const observations = pairs.length;
-      if (observations < 2) {
+      if (calc.status === 'zero_variance') {
         return {
           status: 'cannot_answer',
           operation: 'correlation',
-          reason: observations === 0 
-            ? `No valid paired observations exist between '${colX}' and '${colY}'.` 
-            : `Insufficient paired observations (${observations}) to calculate correlation between '${colX}' and '${colY}'. At least 2 valid paired observations are required.`,
+          reason: 'Correlation undefined because one variable has zero variance.',
           result: [],
-          metadata: { rowsAnalyzed, missingValuesIgnored }
+          metadata: { rowsAnalyzed, missingValuesIgnored: calc.missingPairsExcluded }
         };
       }
 
-      const meanX = pairs.reduce((sum, p) => sum + p.x, 0) / observations;
-      const meanY = pairs.reduce((sum, p) => sum + p.y, 0) / observations;
-
-      let sumCov = 0;
-      let sumVarX = 0;
-      let sumVarY = 0;
-
-      pairs.forEach(p => {
-        const diffX = p.x - meanX;
-        const diffY = p.y - meanY;
-        sumCov += diffX * diffY;
-        sumVarX += diffX * diffX;
-        sumVarY += diffY * diffY;
-      });
-
-      if (sumVarX === 0 || sumVarY === 0) {
-        const zeroVarCol = (sumVarX === 0 && sumVarY === 0) ? `'${colX}' and '${colY}'` : (sumVarX === 0 ? `'${colX}'` : `'${colY}'`);
+      if (calc.status === 'insufficient_data') {
         return {
           status: 'cannot_answer',
           operation: 'correlation',
-          reason: `Correlation cannot be calculated because column ${zeroVarCol} has zero variance (constant values).`,
+          reason: calc.observations === 0
+            ? 'No valid paired observations exist between the selected columns.'
+            : 'Correlation cannot be reliably calculated because there are insufficient valid paired observations.',
           result: [],
-          metadata: { rowsAnalyzed, missingValuesIgnored }
+          metadata: { rowsAnalyzed, missingValuesIgnored: calc.missingPairsExcluded }
         };
       }
-
-      let r = sumCov / (Math.sqrt(sumVarX) * Math.sqrt(sumVarY));
-      if (r > 1) r = 1;
-      if (r < -1) r = -1;
-
-      const rFormatted = Number(r.toFixed(4));
 
       resultData = [{
+        operation: 'correlation',
+        method: 'pearson',
         columnX: colX,
         columnY: colY,
-        correlation: rFormatted,
-        observations: observations,
-        method: 'pearson'
+        correlation: calc.rFormatted,
+        pearsonR: calc.rFormatted,
+        rawR: calc.r,
+        direction: calc.direction,
+        strength: calc.strength,
+        rowsAnalyzed,
+        missingPairsExcluded: calc.missingPairsExcluded,
+        observations: calc.observations
       }];
 
       if (!columnsUsed.includes(colX)) columnsUsed.push(colX);
@@ -790,13 +866,153 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
 
       return {
         status: 'success',
-        operation,
+        operation: 'correlation',
         columnsUsed,
         result: resultData,
         metadata: {
           rowsAnalyzed,
-          missingValuesIgnored,
-          scatterPoints: pairs
+          missingValuesIgnored: calc.missingPairsExcluded,
+          missingPairsExcluded: calc.missingPairsExcluded,
+          method: 'Pearson',
+          columnX: colX,
+          columnY: colY,
+          pearsonR: calc.rFormatted,
+          rawR: calc.r,
+          direction: calc.direction,
+          strength: calc.strength,
+          observations: calc.observations,
+          scatterPoints: calc.pairs
+        }
+      };
+    }
+
+    case 'correlation_matrix': {
+      let cols = Array.isArray(plan.columns) && plan.columns.length > 0 ? plan.columns : [];
+      
+      // If columns not provided or empty, find all numeric measure columns from rows
+      if (cols.length === 0 && filteredRows.length > 0) {
+        const sampleRow = filteredRows[0];
+        const allKeys = Object.keys(sampleRow);
+        cols = allKeys.filter(k => {
+          const lower = k.trim().toLowerCase();
+          if (lower.includes('id') || lower.includes('code')) return false;
+          const val = getCellValue(sampleRow, k);
+          const num = parseNumber(val);
+          return !isNaN(num);
+        });
+      }
+
+      if (cols.length < 2) {
+        throw new Error('Correlation matrix requires at least two numerical measure columns.');
+      }
+
+      const targetCol = plan.target_column || plan.targetColumn || null;
+
+      // Compute pairwise correlations for all combinations
+      const matrixMap = {};
+      cols.forEach(c => { matrixMap[c] = {}; });
+
+      let maxMissingPairs = 0;
+      const pairwiseResults = [];
+
+      for (let i = 0; i < cols.length; i++) {
+        for (let j = 0; j < cols.length; j++) {
+          const c1 = cols[i];
+          const c2 = cols[j];
+
+          if (i === j) {
+            matrixMap[c1][c2] = 1.00;
+          } else if (i < j) {
+            const calc = computePairwiseCorrelation(filteredRows, c1, c2);
+            const rVal = calc.status === 'success' ? calc.rFormatted : null;
+            matrixMap[c1][c2] = rVal;
+            matrixMap[c2][c1] = rVal;
+
+            if (calc.missingPairsExcluded > maxMissingPairs) {
+              maxMissingPairs = calc.missingPairsExcluded;
+            }
+
+            if (calc.status === 'success') {
+              pairwiseResults.push({
+                colX: c1,
+                colY: c2,
+                calc
+              });
+            }
+          }
+        }
+      }
+
+      // Build tabular matrix display format
+      const matrixTableRows = cols.map(c1 => {
+        const rowObj = { Variable: c1 };
+        cols.forEach(c2 => {
+          rowObj[c2] = matrixMap[c1][c2] !== null ? Number(matrixMap[c1][c2].toFixed(2)) : 'N/A';
+        });
+        return rowObj;
+      });
+
+      // Target column factors ranking if requested
+      let targetFactors = null;
+      if (targetCol && cols.includes(targetCol)) {
+        targetFactors = [];
+        cols.forEach(c => {
+          if (c !== targetCol) {
+            const calc = computePairwiseCorrelation(filteredRows, targetCol, c);
+            if (calc.status === 'success') {
+              targetFactors.push({
+                variable: c,
+                pearsonR: (calc.r >= 0 ? '+' : '') + calc.r.toFixed(2),
+                rawR: calc.r,
+                absR: calc.absR,
+                direction: calc.direction,
+                strength: calc.strength,
+                observations: calc.observations,
+                missingPairsExcluded: calc.missingPairsExcluded
+              });
+            }
+          }
+        });
+
+        // Sort target factors by absolute correlation descending
+        targetFactors.sort((a, b) => b.absR - a.absR);
+      }
+
+      // Find strongest non-trivial pair for scatter plot representation
+      let topPair = null;
+      if (pairwiseResults.length > 0) {
+        pairwiseResults.sort((a, b) => b.calc.absR - a.calc.absR);
+        const top = pairwiseResults[0];
+        topPair = {
+          columnX: top.colX,
+          columnY: top.colY,
+          pearsonR: top.calc.rFormatted,
+          rawR: top.calc.r,
+          direction: top.calc.direction,
+          strength: top.calc.strength,
+          observations: top.calc.observations,
+          missingPairsExcluded: top.calc.missingPairsExcluded,
+          scatterPoints: top.calc.pairs
+        };
+      }
+
+      resultData = matrixTableRows;
+
+      return {
+        status: 'success',
+        operation: 'correlation_matrix',
+        columnsUsed: cols,
+        result: resultData,
+        metadata: {
+          rowsAnalyzed,
+          missingValuesIgnored: maxMissingPairs,
+          missingPairsExcluded: maxMissingPairs,
+          method: 'Pearson',
+          columns: cols,
+          matrixMap,
+          targetColumn: targetCol,
+          targetFactors,
+          topPair
         }
       };
     }

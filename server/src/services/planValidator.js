@@ -19,7 +19,8 @@ const SUPPORTED_OPERATIONS = new Set([
   'time_group',
   'time_series',
   'describe',
-  'correlation'
+  'correlation',
+  'correlation_matrix'
 ]);
 
 const SUPPORTED_AGGREGATIONS = new Set([
@@ -306,75 +307,163 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
     }
   }
 
-  // Correlation Operation Validation
-  if (operation === 'correlation') {
-    let rawMeasures = plan.measures;
-    if (!Array.isArray(rawMeasures) || rawMeasures.length === 0) {
-      if (plan.column && plan.measure) {
-        rawMeasures = [plan.column, plan.measure];
+  // Correlation & Correlation Matrix Validation
+  if (operation === 'correlation' || operation === 'correlation_matrix') {
+    if (operation === 'correlation') {
+      let rawMeasures = plan.measures;
+      if (!Array.isArray(rawMeasures) || rawMeasures.length === 0) {
+        if (plan.column_x && plan.column_y) {
+          rawMeasures = [plan.column_x, plan.column_y];
+        } else if (plan.column && plan.measure) {
+          rawMeasures = [plan.column, plan.measure];
+        }
       }
-    }
 
-    if (!Array.isArray(rawMeasures) || rawMeasures.length < 2) {
+      if (!Array.isArray(rawMeasures) || rawMeasures.length < 2) {
+        return {
+          isValid: true,
+          status: 'cannot_answer',
+          plan: null,
+          reason: 'Correlation analysis requires at least two numerical columns.'
+        };
+      }
+
+      const canonicalMeasures = [];
+      for (const m of rawMeasures.slice(0, 2)) {
+        const type = getColType(m);
+        if (!type) {
+          return {
+            isValid: true,
+            status: 'cannot_answer',
+            plan: null,
+            reason: `Column '${m}' does not exist in the dataset schema.`
+          };
+        }
+        if (getColSemanticType(m) === 'identifier') {
+          return {
+            isValid: true,
+            status: 'cannot_answer',
+            plan: null,
+            reason: `Cannot calculate correlation. ${getCanonicalColName(m)} is classified as an identifier, not an analytical measure. Identifier columns are excluded from correlation analysis because their numerical values do not represent measurable quantities.`
+          };
+        }
+        if (!isNumericType(type)) {
+          return {
+            isValid: true,
+            status: 'cannot_answer',
+            plan: null,
+            reason: `Correlation analysis requires numerical columns. Column '${m}' is of non-numeric type '${type}'.`
+          };
+        }
+        canonicalMeasures.push(getCanonicalColName(m));
+      }
+
+      if (canonicalMeasures[0] === canonicalMeasures[1]) {
+        return {
+          isValid: true,
+          status: 'cannot_answer',
+          plan: null,
+          reason: 'Correlation analysis requires two distinct numerical columns.'
+        };
+      }
+
       return {
         isValid: true,
-        status: 'cannot_answer',
-        plan: null,
-        reason: 'Correlation analysis requires at least two numerical columns.'
+        status: 'validated',
+        plan: {
+          operation: 'correlation',
+          measures: canonicalMeasures,
+          column_x: canonicalMeasures[0],
+          column_y: canonicalMeasures[1],
+          column: canonicalMeasures[0],
+          measure: canonicalMeasures[1],
+          method: 'pearson',
+          filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
+        },
+        reason: null
       };
     }
 
-    const canonicalMeasures = [];
-    for (const m of rawMeasures.slice(0, 2)) {
-      const type = getColType(m);
-      if (!type) {
-        return {
-          isValid: true,
-          status: 'cannot_answer',
-          plan: null,
-          reason: `Column '${m}' does not exist in the dataset schema.`
-        };
-      }
-      if (getColSemanticType(m) === 'identifier') {
-        return {
-          isValid: true,
-          status: 'cannot_answer',
-          plan: null,
-          reason: `Correlation analysis cannot be performed on identifier column '${getCanonicalColName(m)}'.`
-        };
-      }
-      if (!isNumericType(type)) {
-        return {
-          isValid: true,
-          status: 'cannot_answer',
-          plan: null,
-          reason: `Correlation analysis requires numerical columns. Column '${m}' is of non-numeric type '${type}'.`
-        };
-      }
-      canonicalMeasures.push(getCanonicalColName(m));
-    }
+    if (operation === 'correlation_matrix') {
+      let rawCols = plan.columns || plan.measures;
 
-    if (canonicalMeasures[0] === canonicalMeasures[1]) {
+      // Find all eligible numerical measure columns from schema
+      const eligibleMeasureCols = (schemaColumns || [])
+        .filter(c => isNumericType(c.type) && getColSemanticType(c.name) !== 'identifier')
+        .map(c => c.name);
+
+      if (Array.isArray(rawCols) && rawCols.length > 0) {
+        for (const m of rawCols) {
+          const type = getColType(m);
+          if (!type) {
+            return {
+              isValid: true,
+              status: 'cannot_answer',
+              plan: null,
+              reason: `Column '${m}' does not exist in the dataset schema.`
+            };
+          }
+          if (getColSemanticType(m) === 'identifier') {
+            return {
+              isValid: true,
+              status: 'cannot_answer',
+              plan: null,
+              reason: `Cannot calculate correlation. ${getCanonicalColName(m)} is classified as an identifier, not an analytical measure. Identifier columns are excluded from correlation analysis because their numerical values do not represent measurable quantities.`
+            };
+          }
+          if (!isNumericType(type)) {
+            return {
+              isValid: true,
+              status: 'cannot_answer',
+              plan: null,
+              reason: `Correlation analysis requires numerical columns. Column '${m}' is of non-numeric type '${type}'.`
+            };
+          }
+        }
+      } else {
+        rawCols = eligibleMeasureCols;
+      }
+
+      const canonicalCols = Array.from(new Set(rawCols.map(m => getCanonicalColName(m))));
+
+      if (canonicalCols.length < 2) {
+        return {
+          isValid: true,
+          status: 'cannot_answer',
+          plan: null,
+          reason: 'Correlation analysis requires at least two numerical measure columns.'
+        };
+      }
+
+      // Check target_column if specified
+      let targetCol = plan.target_column || plan.targetColumn || null;
+      if (targetCol) {
+        if (getColSemanticType(targetCol) === 'identifier') {
+          return {
+            isValid: true,
+            status: 'cannot_answer',
+            plan: null,
+            reason: `Cannot calculate correlation. ${getCanonicalColName(targetCol)} is classified as an identifier, not an analytical measure. Identifier columns are excluded from correlation analysis because their numerical values do not represent measurable quantities.`
+          };
+        }
+        targetCol = getCanonicalColName(targetCol);
+      }
+
       return {
         isValid: true,
-        status: 'cannot_answer',
-        plan: null,
-        reason: 'Correlation analysis requires two distinct numerical columns.'
+        status: 'validated',
+        plan: {
+          operation: 'correlation_matrix',
+          columns: canonicalCols,
+          measures: canonicalCols,
+          target_column: targetCol,
+          targetColumn: targetCol,
+          method: 'pearson',
+          filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
+        },
+        reason: null
       };
     }
-
-    return {
-      isValid: true,
-      status: 'validated',
-      plan: {
-        operation: 'correlation',
-        measures: canonicalMeasures,
-        column: canonicalMeasures[0],
-        measure: canonicalMeasures[1],
-        filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
-      },
-      reason: null
-    };
   }
 
   // 3. Limit validation
