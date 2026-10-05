@@ -151,6 +151,24 @@ function determineVisualization(executionResult, plan = null) {
     };
   }
 
+  if (operation === 'forecast') {
+    const meta = executionResult.metadata || {};
+    const targetCol = meta.target || meta.targetColumn || 'Value';
+    return {
+      chartType: 'forecast',
+      shouldRenderChart: true,
+      title: `${targetCol} Forecast`,
+      subtitle: `Historical + ${meta.horizon || 3}-Period Forecast`,
+      xKey: 'Period',
+      yKey: targetCol,
+      dateColumn: meta.dateColumn || 'Period',
+      targetColumn: targetCol,
+      horizon: meta.horizon || 3,
+      granularity: meta.granularity || 'MONTH',
+      chartData: resultData
+    };
+  }
+
   if (['group_aggregate', 'top_n', 'bottom_n', 'sort'].includes(operation)) {
     return {
       chartType: 'bar',

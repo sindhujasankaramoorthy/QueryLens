@@ -270,6 +270,79 @@ function heuristicFallbackPlanner(question, schemaColumns, context = null) {
     };
   }
 
+  // Phase 12 Forecasting Query Handler ("Forecast monthly sales for the next 3 months", "Predict sales for the next 6 months", "What will sales look like next month?")
+  const forecastKeywords = ['forecast', 'predict', 'prediction', 'future', 'next month', 'next week', 'next year', 'expected', 'projected', 'estimate future'];
+  const isForecastQuery = forecastKeywords.some(k => q.includes(k)) ||
+    (prevPlan?.operation === 'forecast' && (matchedNumeric || q.includes('what about')) && !matchedCat);
+
+  if (isForecastQuery) {
+    // 1. Identifier Protection Check (e.g., "Forecast Order_ID for the next 3 months")
+    if (matchedId && (q.includes('forecast') || q.includes('predict') || q.includes('prediction'))) {
+      const validMeasure = (matchedNumeric ? matchedNumeric.name : (numericCols[0] ? numericCols[0].name : 'Sales'));
+      return {
+        status: 'cannot_answer',
+        reason: `${matchedId.name} is an identifier column and cannot be used as a forecasting target. ${validMeasure} can be used as a numerical measure.`
+      };
+    }
+
+    // 2. Target Measure Resolution
+    const targetMeasureCol = matchedNumeric || (prevMeasure ? numericCols.find(c => c.name === prevMeasure) : null) || numericCols[0];
+    if (!targetMeasureCol) {
+      return {
+        status: 'cannot_answer',
+        reason: 'Forecasting requires a numerical target column.'
+      };
+    }
+
+    // 3. Date Column Resolution
+    const dateCol = matchedDate || dateCols[0];
+    if (!dateCol) {
+      return {
+        status: 'cannot_answer',
+        reason: 'Forecasting requires a valid date/time column.'
+      };
+    }
+
+    // 4. Granularity Resolution
+    let granularity = 'MONTH';
+    if (q.includes('daily') || q.includes('day')) granularity = 'DAY';
+    else if (q.includes('weekly') || q.includes('week')) granularity = 'WEEK';
+    else if (q.includes('quarterly') || q.includes('quarter')) granularity = 'QUARTER';
+    else if (q.includes('yearly') || q.includes('annual') || q.includes('year')) granularity = 'YEAR';
+    else if (q.includes('monthly') || q.includes('month')) granularity = 'MONTH';
+
+    // 5. Horizon Resolution
+    let horizon = 3;
+    const numberMatch = q.match(/(?:next|for|the next|upcoming)\s+(\d+)\s+(?:month|week|year|quarter|day)s?/i) ||
+                        q.match(/(\d+)\s+(?:month|week|year|quarter|day)s?\s+(?:forecast|prediction)?/i) ||
+                        q.match(/(\d+)\s+period/i);
+    if (numberMatch && numberMatch[1]) {
+      const parsedH = parseInt(numberMatch[1], 10);
+      if (!isNaN(parsedH) && parsedH > 0) {
+        horizon = parsedH;
+      }
+    } else if (q.includes('next month') || q.includes('next week') || q.includes('next year')) {
+      horizon = 1;
+    }
+
+    return {
+      status: 'success',
+      plan: {
+        operation: 'forecast',
+        target: targetMeasureCol.name,
+        measure: targetMeasureCol.name,
+        column: targetMeasureCol.name,
+        date_column: dateCol.name,
+        dateColumn: dateCol.name,
+        aggregation: 'SUM',
+        granularity: granularity,
+        horizon: horizon,
+        method: 'linear_regression',
+        confidence_level: 0.95
+      }
+    };
+  }
+
   // Handle explicit queries on identifier columns (e.g. Order_ID)
   if (matchedId) {
     const isCountQuery = q.includes('how many') || q.includes('count') || q.includes('unique') || q.includes('number of');

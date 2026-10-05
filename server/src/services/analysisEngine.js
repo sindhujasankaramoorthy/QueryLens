@@ -201,6 +201,71 @@ function getTimeGroupKey(val, timeUnit = 'month') {
 }
 
 /**
+ * Increment formatted date keys for time series forecasting
+ */
+function incrementDateKey(dateKey, granularity = 'month') {
+  if (!dateKey) return dateKey;
+  const str = String(dateKey).trim();
+  const gran = String(granularity).toLowerCase();
+
+  // YYYY-MM
+  if (gran.includes('month') || /^\d{4}-\d{2}$/.test(str)) {
+    const parts = str.split('-');
+    if (parts.length === 2) {
+      let y = parseInt(parts[0], 10);
+      let m = parseInt(parts[1], 10);
+      m += 1;
+      if (m > 12) { m = 1; y += 1; }
+      return `${y}-${String(m).padStart(2, '0')}`;
+    }
+  }
+
+  // YYYY
+  if (gran.includes('year') || /^\d{4}$/.test(str)) {
+    let y = parseInt(str, 10);
+    if (!isNaN(y)) return `${y + 1}`;
+  }
+
+  // YYYY-Q1
+  if (gran.includes('quarter') || /^\d{4}-Q[1-4]$/i.test(str)) {
+    const match = str.match(/^(\d{4})-Q([1-4])$/i);
+    if (match) {
+      let y = parseInt(match[1], 10);
+      let q = parseInt(match[2], 10);
+      q += 1;
+      if (q > 4) { q = 1; y += 1; }
+      return `${y}-Q${q}`;
+    }
+  }
+
+  // YYYY-W01
+  if (gran.includes('week') || /^\d{4}-W\d{2}$/i.test(str)) {
+    const match = str.match(/^(\d{4})-W(\d{2})$/i);
+    if (match) {
+      let y = parseInt(match[1], 10);
+      let w = parseInt(match[2], 10);
+      w += 1;
+      if (w > 52) { w = 1; y += 1; }
+      return `${y}-W${String(w).padStart(2, '0')}`;
+    }
+  }
+
+  // YYYY-MM-DD
+  if (gran.includes('day') || /^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      d.setDate(d.getDate() + 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+  }
+
+  return `${dateKey} (+1)`;
+}
+
+/**
  * Helper to compute correlation strength and direction according to Phase 10 rules
  */
 function getCorrelationStrengthAndDirection(r) {
@@ -1199,6 +1264,264 @@ function calculateLinearTrend(points, granularity = 'MONTH') {
           scatterPoints,
           featureX,
           featureY
+        }
+      };
+    }
+
+    case 'forecast': {
+      const targetCol = plan.target || plan.measure || plan.column;
+      let dateCol = plan.date_column || plan.dateColumn;
+      const agg = (plan.aggregation || 'sum').toLowerCase().trim();
+      const granularity = (plan.granularity || 'month').toLowerCase().trim();
+      const horizon = Math.max(1, parseInt(plan.horizon || 3, 10));
+
+      if (!targetCol) {
+        return {
+          status: 'cannot_answer',
+          operation: 'forecast',
+          reason: 'Forecasting requires a numerical target column.',
+          result: [],
+          metadata: { rowsAnalyzed }
+        };
+      }
+
+      if (!dateCol && filteredRows.length > 0) {
+        const sampleRow = filteredRows[0];
+        const keys = Object.keys(sampleRow);
+        const dKey = keys.find(k => ['date', 'time', 'month', 'year', 'day', 'timestamp', 'created_at', 'order_date'].some(w => k.toLowerCase().includes(w)));
+        if (dKey) dateCol = dKey;
+      }
+
+      if (!dateCol) {
+        return {
+          status: 'cannot_answer',
+          operation: 'forecast',
+          reason: 'Forecasting requires a valid date/time column.',
+          result: [],
+          metadata: { rowsAnalyzed }
+        };
+      }
+
+      let invalidDatesCount = 0;
+      let missingTargetCount = 0;
+      const groupedDataMap = new Map();
+
+      filteredRows.forEach(row => {
+        const rawDate = getCellValue(row, dateCol);
+        const parsedDate = parseDateValue(rawDate);
+        if (!parsedDate) {
+          invalidDatesCount++;
+          return;
+        }
+
+        const rawTarget = getCellValue(row, targetCol);
+        if (isMissingValue(rawTarget)) {
+          missingTargetCount++;
+          return;
+        }
+
+        const numTarget = parseNumber(rawTarget);
+        if (isNaN(numTarget)) {
+          missingTargetCount++;
+          return;
+        }
+
+        const dateKey = getTimeGroupKey(parsedDate, granularity);
+        if (!groupedDataMap.has(dateKey)) {
+          groupedDataMap.set(dateKey, []);
+        }
+        groupedDataMap.get(dateKey).push(numTarget);
+      });
+
+      const aggregatedPeriods = [];
+      groupedDataMap.forEach((vals, dKey) => {
+        let aggVal = 0;
+        if (agg === 'average' || agg === 'avg') {
+          aggVal = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+        } else if (agg === 'count') {
+          aggVal = vals.length;
+        } else if (agg === 'max') {
+          aggVal = Math.max(...vals);
+        } else if (agg === 'min') {
+          aggVal = Math.min(...vals);
+        } else {
+          aggVal = vals.reduce((a, b) => a + b, 0);
+        }
+        aggregatedPeriods.push({ dateKey: dKey, value: Number(aggVal.toFixed(4)) });
+      });
+
+      aggregatedPeriods.sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)));
+
+      const N = aggregatedPeriods.length;
+      if (N < 2) {
+        return {
+          status: 'cannot_answer',
+          operation: 'forecast',
+          reason: 'Forecasting requires at least two historical time periods.',
+          result: [],
+          metadata: { rowsAnalyzed: N, invalidDatesExcluded: invalidDatesCount, missingTargetExcluded: missingTargetCount }
+        };
+      }
+
+      const xVals = Array.from({ length: N }, (_, i) => i + 1);
+      const yVals = aggregatedPeriods.map(p => p.value);
+
+      const meanX = (N + 1) / 2;
+      const meanY = yVals.reduce((a, b) => a + b, 0) / N;
+
+      let ssXX = 0;
+      let ssXY = 0;
+      for (let i = 0; i < N; i++) {
+        const dx = xVals[i] - meanX;
+        const dy = yVals[i] - meanY;
+        ssXX += dx * dx;
+        ssXY += dx * dy;
+      }
+
+      const slope = ssXX > 0 ? ssXY / ssXX : 0;
+      const intercept = meanY - slope * meanX;
+
+      let sumResidualsSq = 0;
+      for (let i = 0; i < N; i++) {
+        const yHat = slope * xVals[i] + intercept;
+        sumResidualsSq += Math.pow(yVals[i] - yHat, 2);
+      }
+
+      const rse = N > 2 ? Math.sqrt(sumResidualsSq / (N - 2)) : 0;
+      const tCrit = 1.96;
+
+      let backtestMetrics = null;
+      if (N >= 4) {
+        const K = Math.max(1, Math.min(3, Math.floor(N * 0.25)));
+        const nTrain = N - K;
+        const trainX = Array.from({ length: nTrain }, (_, i) => i + 1);
+        const trainY = yVals.slice(0, nTrain);
+
+        const mXTrain = (nTrain + 1) / 2;
+        const mYTrain = trainY.reduce((a, b) => a + b, 0) / nTrain;
+
+        let ssXXTr = 0;
+        let ssXYTr = 0;
+        for (let i = 0; i < nTrain; i++) {
+          const dx = trainX[i] - mXTrain;
+          const dy = trainY[i] - mYTrain;
+          ssXXTr += dx * dx;
+          ssXYTr += dx * dy;
+        }
+
+        const slopeTr = ssXXTr > 0 ? ssXYTr / ssXXTr : 0;
+        const interceptTr = mYTrain - slopeTr * mXTrain;
+
+        let absErrSum = 0;
+        let sqErrSum = 0;
+        let mapeErrSum = 0;
+        let validMapeCount = 0;
+
+        for (let j = 0; j < K; j++) {
+          const tVal = nTrain + 1 + j;
+          const actual = yVals[nTrain + j];
+          const pred = slopeTr * tVal + interceptTr;
+          const absErr = Math.abs(actual - pred);
+
+          absErrSum += absErr;
+          sqErrSum += absErr * absErr;
+
+          if (actual !== 0) {
+            mapeErrSum += (absErr / Math.abs(actual)) * 100;
+            validMapeCount++;
+          }
+        }
+
+        const mae = Number((absErrSum / K).toFixed(2));
+        const rmse = Number((Math.sqrt(sqErrSum / K)).toFixed(2));
+        const mape = validMapeCount > 0 ? Number((mapeErrSum / validMapeCount).toFixed(2)) : null;
+
+        backtestMetrics = {
+          mae,
+          rmse,
+          mape,
+          validationPeriods: K,
+          trainingPeriods: nTrain
+        };
+      }
+
+      const combinedResults = [];
+
+      aggregatedPeriods.forEach(p => {
+        combinedResults.push({
+          Period: p.dateKey,
+          Type: 'Historical',
+          [targetCol]: p.value
+        });
+      });
+
+      let lastDateKey = aggregatedPeriods[N - 1].dateKey;
+      const forecastSeries = [];
+
+      for (let k = 1; k <= horizon; k++) {
+        const nextTimeIndex = N + k;
+        const rawForecast = slope * nextTimeIndex + intercept;
+        const boundedForecast = Math.max(0, Number(rawForecast.toFixed(2)));
+
+        const sePred = ssXX > 0 ? rse * Math.sqrt(1 + 1 / N + Math.pow(nextTimeIndex - meanX, 2) / ssXX) : 0;
+        const marginOfError = tCrit * sePred;
+
+        const lowerBound = Math.max(0, Number((boundedForecast - marginOfError).toFixed(2)));
+        const upperBound = Number((boundedForecast + marginOfError).toFixed(2));
+
+        const nextDateKey = incrementDateKey(lastDateKey, granularity);
+        lastDateKey = nextDateKey;
+
+        const forecastRow = {
+          Period: nextDateKey,
+          Type: 'Forecast',
+          [targetCol]: boundedForecast,
+          'Lower Bound (95%)': lowerBound,
+          'Upper Bound (95%)': upperBound
+        };
+
+        combinedResults.push(forecastRow);
+        forecastSeries.push({
+          period: nextDateKey,
+          forecast: boundedForecast,
+          lowerBound,
+          upperBound
+        });
+      }
+
+      const latestHistoricalValue = yVals[N - 1];
+      const finalForecastValue = forecastSeries[horizon - 1].forecast;
+      const overallChangePercent = latestHistoricalValue > 0
+        ? Number((((finalForecastValue - latestHistoricalValue) / latestHistoricalValue) * 100).toFixed(2))
+        : 0;
+
+      resultData = combinedResults;
+
+      return {
+        status: 'success',
+        operation: 'forecast',
+        columnsUsed: [dateCol, targetCol],
+        result: resultData,
+        metadata: {
+          operation: 'forecast',
+          target: targetCol,
+          targetColumn: targetCol,
+          dateColumn: dateCol,
+          granularity,
+          horizon,
+          method: 'Linear Regression',
+          confidenceLevel: 0.95,
+          totalRecords: rows.length,
+          rowsAnalyzed: N,
+          invalidDatesExcluded: invalidDatesCount,
+          missingTargetExcluded: missingTargetCount,
+          latestHistoricalValue,
+          firstForecastValue: forecastSeries[0].forecast,
+          finalForecastValue,
+          overallChangePercent,
+          slope: Number(slope.toFixed(4)),
+          intercept: Number(intercept.toFixed(4)),
+          backtestMetrics
         }
       };
     }

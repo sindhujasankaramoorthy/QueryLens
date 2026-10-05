@@ -21,7 +21,8 @@ const SUPPORTED_OPERATIONS = new Set([
   'describe',
   'correlation',
   'correlation_matrix',
-  'anomaly_detection'
+  'anomaly_detection',
+  'forecast'
 ]);
 
 const SUPPORTED_AGGREGATIONS = new Set([
@@ -555,6 +556,85 @@ function validateAnalysisPlan(rawPlan, schemaColumns) {
         features: selectedFeatures,
         columns: selectedFeatures,
         iqr_multiplier: 1.5,
+        filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
+      },
+      reason: null
+    };
+  }
+
+  if (operation === 'forecast') {
+    const rawTarget = plan.target || plan.measure || plan.column;
+    if (!rawTarget) {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: 'Forecasting requires a numerical target column.'
+      };
+    }
+
+    const type = getColType(rawTarget);
+    if (!type) {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: `Column '${rawTarget}' does not exist in the dataset schema.`
+      };
+    }
+
+    if (getColSemanticType(rawTarget) === 'identifier') {
+      const validMeasure = (schemaColumns || []).find(c => isNumericType(c.type) && getColSemanticType(c.name) !== 'identifier');
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: `${getCanonicalColName(rawTarget)} is an identifier column and cannot be used as a forecasting target. ${validMeasure ? validMeasure.name : 'Sales'} can be used as a numerical measure.`
+      };
+    }
+
+    if (!isNumericType(type)) {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: `Forecasting requires a numerical target measure. Column '${rawTarget}' is of non-numeric type '${type}'.`
+      };
+    }
+
+    let rawDate = plan.date_column || plan.dateColumn;
+    if (!rawDate) {
+      const dateSchemaCol = (schemaColumns || []).find(c => isDateType(c.type, c.name));
+      if (dateSchemaCol) rawDate = dateSchemaCol.name;
+    }
+
+    if (!rawDate) {
+      return {
+        isValid: true,
+        status: 'cannot_answer',
+        plan: null,
+        reason: 'Forecasting requires a valid date/time column.'
+      };
+    }
+
+    const horizon = Math.max(1, parseInt(plan.horizon || 3, 10));
+    const gran = String(plan.granularity || 'MONTH').toUpperCase();
+
+    return {
+      isValid: true,
+      status: 'validated',
+      plan: {
+        operation: 'forecast',
+        target: getCanonicalColName(rawTarget),
+        measure: getCanonicalColName(rawTarget),
+        column: getCanonicalColName(rawTarget),
+        date_column: getCanonicalColName(rawDate),
+        dateColumn: getCanonicalColName(rawDate),
+        aggregation: (plan.aggregation || 'sum').toLowerCase(),
+        granularity: gran,
+        horizon: horizon,
+        method: 'linear_regression',
+        confidence_level: 0.95,
         filters: Array.isArray(plan.filters) ? plan.filters.map(f => ({ ...f, column: getCanonicalColName(f.column) })) : []
       },
       reason: null

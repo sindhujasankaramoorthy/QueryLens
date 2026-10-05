@@ -52,6 +52,7 @@ export default function ResultVisualization({ execution, validation, question, t
   const isCorrelation = operation === 'correlation' || firstRow.correlation !== undefined || firstRow.pearsonR !== undefined;
   const isCorrelationMatrix = operation === 'correlation_matrix';
   const isAnomalyDetection = operation === 'anomaly_detection';
+  const isForecast = operation === 'forecast';
 
   const colX = metadata.columnX || firstRow.columnX;
   const colY = metadata.columnY || firstRow.columnY;
@@ -66,7 +67,7 @@ export default function ResultVisualization({ execution, validation, question, t
   const scatterColX = colX || (metadata.topPair ? metadata.topPair.columnX : 'Variable X');
   const scatterColY = colY || (metadata.topPair ? metadata.topPair.columnY : 'Variable Y');
 
-  const isTimeSeries = !isCorrelation && !isCorrelationMatrix && (operation === 'time_series' || operation === 'time_group' || Boolean(metadata?.dateColumn) || Boolean(validation?.plan?.granularity) || Boolean(validation?.plan?.timeUnit));
+  const isTimeSeries = !isCorrelation && !isCorrelationMatrix && !isForecast && (operation === 'time_series' || operation === 'time_group' || Boolean(metadata?.dateColumn) || Boolean(validation?.plan?.granularity) || Boolean(validation?.plan?.timeUnit));
 
   // Auto detect xKey and yKey for non-correlation charts
   let xKey = metadata?.dateColumn || validation?.plan?.date_column || validation?.plan?.column || validation?.plan?.groupBy;
@@ -75,8 +76,8 @@ export default function ResultVisualization({ execution, validation, question, t
   }
 
   let yKey = null;
-  if (metadata?.measureColumn || validation?.plan?.measure) {
-    const targetM = metadata?.measureColumn || validation?.plan?.measure;
+  if (metadata?.measureColumn || validation?.plan?.measure || metadata?.targetColumn || metadata?.target) {
+    const targetM = metadata?.measureColumn || validation?.plan?.measure || metadata?.targetColumn || metadata?.target;
     const aggSuffix = `${targetM}_${validation?.plan?.aggregation || 'sum'}`;
     if (aggSuffix in firstRow) {
       yKey = aggSuffix;
@@ -89,8 +90,8 @@ export default function ResultVisualization({ execution, validation, question, t
     yKey = keys.find(k => k !== xKey && k !== 'Growth (%)' && typeof firstRow[k] === 'number') || keys.find(k => typeof firstRow[k] === 'number');
   }
 
-  const isScalar = !isCorrelation && !isCorrelationMatrix && !isTimeSeries && resultData.length === 1 && (keys.length === 1 || ['count', 'sum', 'average', 'median', 'min', 'max', 'describe'].includes(operation));
-  const shouldChart = !isScalar && !isCorrelation && !isCorrelationMatrix && resultData.length > 1 && Boolean(yKey);
+  const isScalar = !isCorrelation && !isCorrelationMatrix && !isTimeSeries && !isForecast && resultData.length === 1 && (keys.length === 1 || ['count', 'sum', 'average', 'median', 'min', 'max', 'describe'].includes(operation));
+  const shouldChart = !isScalar && !isCorrelation && !isCorrelationMatrix && !isForecast && resultData.length > 1 && Boolean(yKey);
 
   // Theme-aware color variables for Recharts
   const isDark = theme === 'dark';
@@ -581,6 +582,237 @@ export default function ResultVisualization({ execution, validation, question, t
               <span>Method: <strong style={{ color: 'var(--primary)' }}>Phase 7 IQR Statistical Outlier Detection</strong></span>
               <span>IQR Multiplier: <strong style={{ color: 'var(--text-main)' }}>1.5x</strong></span>
               <span>Calculation: <strong style={{ color: 'var(--accent-emerald)' }}>100% Verifiable Deterministic</strong></span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Forecasting & Prediction View (Phase 12) */}
+      {isForecast && (
+        <div>
+          {/* Forecast Summary Banner */}
+          <div
+            style={{
+              background: isDark ? 'linear-gradient(135deg, rgba(168, 85, 247, 0.12), rgba(56, 189, 248, 0.08))' : 'linear-gradient(135deg, rgba(168, 85, 247, 0.08), rgba(56, 189, 248, 0.05))',
+              border: '1px solid rgba(168, 85, 247, 0.3)',
+              borderRadius: 'var(--radius-md)',
+              padding: '1.5rem',
+              marginBottom: '1.25rem'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <TrendingUp size={22} style={{ color: 'var(--accent-violet)' }} />
+                <span style={{ fontSize: '0.85rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-violet)' }}>
+                  Time-Series Forecasting ({metadata.target || yKey} over {metadata.granularity || 'MONTH'})
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-violet)', border: '1px solid rgba(168, 85, 247, 0.3)' }}>
+                  Horizon: +{metadata.horizon || 3} {metadata.granularity || 'MONTH'}s
+                </span>
+                <span style={{ padding: '0.25rem 0.6rem', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 700, background: metadata.overallChangePercent >= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(244, 63, 94, 0.15)', color: metadata.overallChangePercent >= 0 ? 'var(--accent-emerald)' : 'var(--accent-rose)', border: metadata.overallChangePercent >= 0 ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(244, 63, 94, 0.3)' }}>
+                  Overall: {metadata.overallChangePercent >= 0 ? '+' : ''}{metadata.overallChangePercent}%
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Target Measure</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem' }}>{formatLabel(metadata.target || yKey)}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Historical Periods</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{metadata.rowsAnalyzed || resultData.filter(r => r.Type === 'Historical').length}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Latest Historical</div>
+                <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.latestHistoricalValue)}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Final Forecast</div>
+                <strong style={{ color: 'var(--accent-violet)', fontSize: '0.95rem', fontFamily: 'var(--font-mono)' }}>{formatValue(metadata.finalForecastValue)}</strong>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                <div>Forecast Method</div>
+                <strong style={{ color: 'var(--primary)', fontSize: '0.95rem' }}>Linear Regression</strong>
+              </div>
+            </div>
+
+            {/* Validation / Backtest Metrics Sub-card */}
+            {metadata.backtestMetrics ? (
+              <div style={{ marginTop: '0.85rem', padding: '0.65rem 0.85rem', borderRadius: '6px', background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--accent-cyan)', marginBottom: '0.35rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Validation / Backtest Metrics ({metadata.backtestMetrics.validationPeriods} Holdout Period{metadata.backtestMetrics.validationPeriods > 1 ? 's' : ''}):
+                </div>
+                <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  <span>MAE: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{metadata.backtestMetrics.mae}</strong></span>
+                  <span>RMSE: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{metadata.backtestMetrics.rmse}</strong></span>
+                  {metadata.backtestMetrics.mape !== null && (
+                    <span>MAPE: <strong style={{ color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>{metadata.backtestMetrics.mape}%</strong></span>
+                  )}
+                </div>
+                <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.25rem', fontStyle: 'italic' }}>
+                  Note: Backtest metrics describe historical model predictive accuracy over holdout validation periods. They do not describe future certainty.
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: '0.85rem', padding: '0.5rem 0.75rem', borderRadius: '6px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', color: 'var(--accent-amber)', fontSize: '0.78rem' }}>
+                <AlertTriangle size={15} style={{ display: 'inline', marginRight: '0.35rem' }} />
+                Insufficient historical periods for reliable backtesting.
+              </div>
+            )}
+          </div>
+
+          {/* Forecast Time-Series Chart */}
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <TrendingUp size={20} style={{ color: 'var(--accent-violet)' }} />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                  {formatLabel(metadata.target || yKey)} Forecast Chart
+                </h4>
+              </div>
+              <span className="type-tag">Historical + {metadata.horizon || 3}-Period Forecast (95% CI)</span>
+            </div>
+
+            <div style={{ width: '100%', height: 340, marginTop: '0.5rem' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={resultData} margin={{ top: 15, right: 30, left: 10, bottom: 25 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                  <XAxis
+                    dataKey="Period"
+                    stroke={axisColor}
+                    tick={{ fill: axisColor, fontSize: 12 }}
+                    tickLine={{ stroke: axisColor }}
+                  />
+                  <YAxis
+                    stroke={axisColor}
+                    tick={{ fill: axisColor, fontSize: 12 }}
+                    tickFormatter={val => (typeof val === 'number' && Math.abs(val) >= 1000 ? `${(val / 1000).toFixed(0)}k` : val)}
+                  />
+                  <Tooltip
+                    contentStyle={{ background: tooltipBg, borderColor: tooltipBorder, borderRadius: '8px', color: tooltipTextColor }}
+                    formatter={(val, name, item) => [
+                      formatValue(val),
+                      name === 'Lower Bound (95%)' || name === 'Upper Bound (95%)' ? name : formatLabel(item?.dataKey || name)
+                    ]}
+                    labelFormatter={(label) => `Period: ${label}`}
+                  />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey={metadata.target || yKey}
+                    name={`${formatLabel(metadata.target || yKey)} (${metadata.granularity || 'MONTH'})`}
+                    stroke={isDark ? '#a855f7' : '#9333ea'}
+                    strokeWidth={3}
+                    dot={(props) => {
+                      const { cx, cy, payload } = props;
+                      const isFc = payload.Type === 'Forecast';
+                      return (
+                        <circle
+                          key={props.index}
+                          cx={cx}
+                          cy={cy}
+                          r={isFc ? 6 : 4}
+                          fill={isFc ? '#f43f5e' : (isDark ? '#38bdf8' : '#0284c7')}
+                          stroke={isDark ? '#0f172a' : '#ffffff'}
+                          strokeWidth={2}
+                        />
+                      );
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="Lower Bound (95%)"
+                    name="Lower Bound (95%)"
+                    stroke="#06b6d4"
+                    strokeDasharray="4 4"
+                    strokeWidth={1.5}
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="Upper Bound (95%)"
+                    name="Upper Bound (95%)"
+                    stroke="#f59e0b"
+                    strokeDasharray="4 4"
+                    strokeWidth={1.5}
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Combined Results Table */}
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Layers size={18} style={{ color: 'var(--primary)' }} />
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                  Forecast Results Table ({resultData.length} Periods)
+                </h4>
+              </div>
+              <span className="type-badge" style={{ background: 'var(--primary-glow)', color: 'var(--primary)', border: '1px solid var(--border-active)' }}>
+                Historical & Forecast Breakdown
+              </span>
+            </div>
+
+            <div className="table-wrapper">
+              <table className="profile-table">
+                <thead>
+                  <tr>
+                    {keys.map(key => (
+                      <th key={key} style={{ textAlign: typeof firstRow[key] === 'number' ? 'right' : 'left' }}>{formatLabel(key)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {resultData.map((row, idx) => {
+                    const isForecastRow = row.Type === 'Forecast';
+                    return (
+                      <tr key={idx} style={{ background: isForecastRow ? (isDark ? 'rgba(168, 85, 247, 0.08)' : 'rgba(168, 85, 247, 0.05)') : 'transparent' }}>
+                        {keys.map((key, cIdx) => {
+                          const rawVal = row[key];
+                          const isTypeCol = key === 'Type';
+
+                          if (isTypeCol) {
+                            return (
+                              <td key={cIdx}>
+                                <span style={{ padding: '0.2rem 0.55rem', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, background: isForecastRow ? 'rgba(168, 85, 247, 0.2)' : 'rgba(16, 185, 129, 0.15)', color: isForecastRow ? 'var(--accent-violet)' : 'var(--accent-emerald)' }}>
+                                  {rawVal}
+                                </span>
+                              </td>
+                            );
+                          }
+
+                          return (
+                            <td
+                              key={cIdx}
+                              style={{
+                                textAlign: typeof rawVal === 'number' ? 'right' : 'left',
+                                fontFamily: typeof rawVal === 'number' ? 'var(--font-mono)' : 'inherit',
+                                fontWeight: typeof rawVal === 'number' || isForecastRow ? 700 : 500,
+                                color: isForecastRow && cIdx === 2 ? 'var(--accent-violet)' : cIdx === 0 ? 'var(--text-main)' : 'inherit'
+                              }}
+                            >
+                              {formatValue(rawVal)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1rem', fontSize: '0.78rem', color: 'var(--text-muted)', borderTop: '1px dashed var(--border-color)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
+              <span>Method: <strong style={{ color: 'var(--primary)' }}>Linear Time-Index Regression</strong></span>
+              <span>Confidence Bounds: <strong style={{ color: 'var(--text-main)' }}>95% Standard Prediction Band</strong></span>
+              <span>Calculation: <strong style={{ color: 'var(--accent-emerald)' }}>100% Deterministic & Grounded</strong></span>
             </div>
           </div>
         </div>

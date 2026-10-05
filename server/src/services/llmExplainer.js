@@ -42,6 +42,21 @@ function extractEvidenceNumbers(evidence) {
   }
   if (evidence?.metadata?.totalRecords !== undefined) numbers.add(String(evidence.metadata.totalRecords));
   if (evidence?.metadata?.rowsExcluded !== undefined) numbers.add(String(evidence.metadata.rowsExcluded));
+  if (evidence?.metadata?.horizon !== undefined) numbers.add(String(evidence.metadata.horizon));
+  if (evidence?.metadata?.latestHistoricalValue !== undefined) numbers.add(String(evidence.metadata.latestHistoricalValue));
+  if (evidence?.metadata?.firstForecastValue !== undefined) numbers.add(String(evidence.metadata.firstForecastValue));
+  if (evidence?.metadata?.finalForecastValue !== undefined) numbers.add(String(evidence.metadata.finalForecastValue));
+  if (evidence?.metadata?.overallChangePercent !== undefined) {
+    numbers.add(String(evidence.metadata.overallChangePercent));
+    numbers.add(Math.abs(evidence.metadata.overallChangePercent).toString());
+  }
+  if (evidence?.metadata?.backtestMetrics) {
+    const bm = evidence.metadata.backtestMetrics;
+    if (bm.mae !== undefined) numbers.add(String(bm.mae));
+    if (bm.rmse !== undefined) numbers.add(String(bm.rmse));
+    if (bm.mape !== undefined && bm.mape !== null) numbers.add(String(bm.mape));
+    if (bm.validationPeriods !== undefined) numbers.add(String(bm.validationPeriods));
+  }
 
   if (Array.isArray(evidence?.result)) {
     evidence.result.forEach(row => {
@@ -138,7 +153,32 @@ function generateDeterministicExplanation(evidence) {
   const firstRow = result[0];
   const keys = Object.keys(firstRow);
 
-  // 0. Anomaly Detection Result (Phase 11)
+  // 0. Forecasting Result (Phase 12)
+  if (operation === 'forecast') {
+    const target = metadata.target || metadata.targetColumn || 'Value';
+    const horizon = metadata.horizon || 3;
+    const gran = (metadata.granularity || 'month').toLowerCase();
+    const method = metadata.method || 'Linear Regression';
+    const latestHist = metadata.latestHistoricalValue !== undefined ? metadata.latestHistoricalValue : 'N/A';
+    const finalFc = metadata.finalForecastValue !== undefined ? metadata.finalForecastValue : 'N/A';
+    const change = metadata.overallChangePercent !== undefined ? metadata.overallChangePercent : 0;
+    const directionStr = change >= 0 ? `projected to increase by ${change}%` : `projected to decrease by ${Math.abs(change)}%`;
+
+    let exp = `Based on historical time-index ${method} over ${metadata.rowsAnalyzed || 'multiple'} ${gran}ly periods, ${target} is ${directionStr} over the next ${horizon} ${gran}s (from ${latestHist} in the latest historical period to ${finalFc} by the final forecast period).`;
+
+    if (metadata.backtestMetrics) {
+      const bm = metadata.backtestMetrics;
+      exp += ` Historical backtesting over ${bm.validationPeriods} holdout period(s) yielded MAE of ${bm.mae}${bm.rmse !== undefined ? `, RMSE of ${bm.rmse}` : ''}${bm.mape !== null ? `, and MAPE of ${bm.mape}%` : ''}.`;
+    } else {
+      exp += ` Insufficient historical periods were available for backtest validation.`;
+    }
+
+    exp += ` Note: Linear regression projects historical trends forward assuming past patterns continue; it does not guarantee future results.`;
+
+    return exp;
+  }
+
+  // 1. Anomaly Detection Result (Phase 11)
   if (operation === 'anomaly_detection') {
     const featureList = (metadata.features || []).join(', ');
     const countOutliers = metadata.anomaliesDetected !== undefined ? metadata.anomaliesDetected : 0;
