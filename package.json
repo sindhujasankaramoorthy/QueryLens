@@ -1,0 +1,15 @@
+{
+  "name": "psa01",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PSA01 - Schema-Agnostic AI Data Analyst",
+  "scripts": {
+    "server": "npm run start --prefix server",
+    "client": "npm run dev --prefix client",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "test": "npm run test --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
