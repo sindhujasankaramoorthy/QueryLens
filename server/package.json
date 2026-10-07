@@ -18,11 +18,14 @@
     "test:phase8": "node tests/dataQuality.test.js",
     "test:phase9": "node tests/timeSeries.test.js",
     "test:phase15": "node tests/decisionSupport.test.js"
-
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
+    "dotenv": "^18.0.6",
     "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.11.0",
     "multer": "^1.4.5-lts.1",
     "papaparse": "^5.4.1",
     "xlsx": "^0.18.5"

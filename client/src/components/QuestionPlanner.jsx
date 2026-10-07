@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Sparkles, Send, AlertCircle, HelpCircle, CheckCircle, Code, MessageSquare, Terminal, HelpCircle as QuestionIcon } from 'lucide-react';
 import ResultVisualization from './ResultVisualization';
 import AIInsight from './AIInsight';
+import { useAuth } from '../context/AuthContext';
 
 export default function QuestionPlanner({ columns, rows, theme }) {
+  const { getAuthHeaders } = useAuth();
   const [question, setQuestion] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -17,7 +19,7 @@ export default function QuestionPlanner({ columns, rows, theme }) {
     if (columns && columns.length > 0) {
       fetch('/api/analysis/suggested-questions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ columns })
       })
         .then(res => res.json())
@@ -40,7 +42,7 @@ export default function QuestionPlanner({ columns, rows, theme }) {
     try {
       const response = await fetch('/api/analysis/execute', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           question: query,
           columns,

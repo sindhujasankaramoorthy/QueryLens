@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const datasetsRouter = require('./routes/datasets');
 const analysisRouter = require('./routes/analysis');
+const authRouter = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -13,6 +14,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const path = require('path');
 
 // Routes
+app.use('/api/auth', authRouter);
 app.use('/api/datasets', datasetsRouter);
 app.use('/api/analysis', analysisRouter);
 
