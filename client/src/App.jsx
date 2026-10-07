@@ -8,6 +8,7 @@ import DataQualityInsights from './components/DataQualityInsights';
 import ExecutiveSummaryModal from './components/ExecutiveSummaryModal';
 import AuthModal from './components/AuthModal';
 import LoginPage from './components/LoginPage';
+import CursorGlow from './components/CursorGlow';
 import { useAuth } from './context/AuthContext';
 import { Sparkles, Sun, Moon, RefreshCw, BarChart3, Database, FileText, User, LogOut, LogIn, ShieldCheck } from 'lucide-react';
 
@@ -72,6 +73,7 @@ export default function App() {
   if (authLoading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b0f19', color: '#38bdf8' }}>
+        <CursorGlow />
         <div style={{ textAlign: 'center' }}>
           <div className="spinner" style={{ width: '32px', height: '32px', margin: '0 auto 1rem auto' }} />
           <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>Initializing QueryLens...</p>
@@ -83,16 +85,20 @@ export default function App() {
   // If user is NOT logged in and has NOT chosen guest mode, render full-screen LoginPage
   if (!user && !isGuestMode) {
     return (
-      <LoginPage 
-        onContinueAsGuest={() => setIsGuestMode(true)} 
-        theme={theme}
-        toggleTheme={toggleTheme}
-      />
+      <>
+        <CursorGlow />
+        <LoginPage 
+          onContinueAsGuest={() => setIsGuestMode(true)} 
+          theme={theme}
+          toggleTheme={toggleTheme}
+        />
+      </>
     );
   }
 
   return (
     <div>
+      <CursorGlow />
       {/* App Header */}
       <header className="app-header">
         <div className="brand">

@@ -1267,4 +1267,33 @@ body {
   transform: translateY(0);
 }
 
+/* ==========================================================================
+   SUBTLE THEME-MATCHING CURSOR FOLLOWER GLOW
+   ========================================================================== */
+.cursor-follower-glow {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 380px;
+  height: 380px;
+  margin-left: -190px;
+  margin-top: -190px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  filter: blur(55px);
+  opacity: 0.85;
+  transition: transform 0.08s cubic-bezier(0.2, 0, 0.2, 1);
+  will-change: transform;
+}
+
+[data-theme="dark"] .cursor-follower-glow {
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.16) 0%, rgba(6, 182, 212, 0.08) 45%, rgba(0, 0, 0, 0) 70%);
+}
+
+[data-theme="light"] .cursor-follower-glow {
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.09) 0%, rgba(124, 58, 237, 0.05) 45%, rgba(255, 255, 255, 0) 70%);
+}
+
+
 
